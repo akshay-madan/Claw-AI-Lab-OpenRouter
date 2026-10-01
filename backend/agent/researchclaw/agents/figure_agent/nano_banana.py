@@ -432,6 +432,9 @@ class NanoBananaAgent(BaseAgent):
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 4096,
         }
+        # OpenRouter only returns images when output modalities are requested
+        if "openrouter.ai" in self._base_url:
+            payload["modalities"] = ["image", "text"]
 
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -453,7 +456,13 @@ class NanoBananaAgent(BaseAgent):
                 logger.warning("OpenAI proxy returned no choices")
                 return False
 
-            content = choices[0].get("message", {}).get("content", "")
+            message = choices[0].get("message", {})
+            content = message.get("content") or ""
+            # OpenRouter puts images in message.images[].image_url.url (data URI)
+            for img in message.get("images") or []:
+                img_url = (img.get("image_url") or {}).get("url", "")
+                if img_url:
+                    content = f"{content}\n{img_url}"
             if not content:
                 logger.warning("OpenAI proxy returned empty content")
                 return False

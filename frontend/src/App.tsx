@@ -119,13 +119,28 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>(() =>
     (localStorage.getItem('claw-locale') as Locale) || 'en'
   );
+  // Follow the OS theme until the user picks one with the toggle button.
+  const systemTheme = (): 'dark' | 'light' =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
-    (localStorage.getItem('claw-theme') as 'dark' | 'light') || 'dark'
+    (localStorage.getItem('claw-theme-choice') as 'dark' | 'light') || systemTheme()
   );
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('claw-theme', theme);
   }, [theme]);
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => {
+      if (!localStorage.getItem('claw-theme-choice')) setTheme(mq.matches ? 'dark' : 'light');
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem('claw-theme-choice', next);
+  };
   const t = useMemo(() => makeT(locale), [locale]);
   const localeCtx = useMemo(() => ({
     locale, setLocale: (l: Locale) => { setLocale(l); localStorage.setItem('claw-locale', l); }, t,
@@ -304,7 +319,7 @@ export default function App() {
         <div className="header-right">
           <button
             className="btn-sm theme-toggle-btn"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            onClick={toggleTheme}
             title={theme === 'dark' ? t('header.theme_light') : t('header.theme_dark')}
           >
             {theme === 'dark' ? '☀️' : '🌙'}

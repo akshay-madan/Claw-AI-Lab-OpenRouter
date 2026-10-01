@@ -1,10 +1,11 @@
 #!/bin/bash
-# 🦞 龙虾 Agent 军团 — 一键启动/停止
-# Usage: ./start.sh [start|stop|restart|status|reset-state|fresh]
+# 🦞 Lobster Agent Legion — one-command start/stop
+# Usage: ./start.sh [start|stop|restart|status|reset-state|fresh] [eco|quality|custom]
+#   eco|quality|custom — model preset (default: `model_profile:` in config.yaml)
 #
-# reset-state — 清空流水线持久化数据（项目、队列、Idea 工厂产出、共享知识库索引）
-#               须先 stop；否则 agent_bridge 仍可能写回文件。
-# fresh       — stop → reset-state → start（全新从头跑）
+# reset-state — clear persisted pipeline data (projects, queues, Idea factory output, shared knowledge-base index)
+#               Run stop first; otherwise agent_bridge may write files back.
+# fresh       — stop → reset-state → start (fresh run from scratch)
 
 BASE="$(cd "$(dirname "$0")" && pwd)"
 FE="$BASE/frontend"
@@ -12,9 +13,18 @@ LOG="$BASE/logs"
 PIDF="$BASE/.pids"
 RUNTIME_PORTS="$BASE/.runtime_ports"
 
+# Load API keys from a private file outside the repo (override path with CLAW_SECRETS_FILE)
+SECRETS_FILE="${CLAW_SECRETS_FILE:-$HOME/.config/claw-ai-lab/secrets.env}"
+if [ -f "$SECRETS_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$SECRETS_FILE"
+    set +a
+fi
+
 # Resolve python path: env PYTHON_PATH > config sandbox.python_path > system python3
 _cfg_py=""
-for _cfg in "$BASE/examples/config_template.yaml" "$BASE"/backend/runs/project_configs/*.yaml; do
+for _cfg in "$BASE/config.yaml" "$BASE"/backend/runs/project_configs/*.yaml; do
     [ -f "$_cfg" ] || continue
     _cfg_py=$(grep 'python_path:' "$_cfg" 2>/dev/null | head -1 | sed 's/.*python_path:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}/\1/' | tr -d '[:space:]')
     [ -n "$_cfg_py" ] && [ -x "$_cfg_py" ] && break
@@ -22,7 +32,7 @@ for _cfg in "$BASE/examples/config_template.yaml" "$BASE"/backend/runs/project_c
 done
 PY="${PYTHON_PATH:-${_cfg_py:-python3}}"
 
-# 命令行传入的端口优先于 .runtime_ports（避免旧文件覆盖本次显式指定）
+# Ports passed on the command line take precedence over .runtime_ports (so a stale file can't override them)
 _saved_rm="${RESOURCE_MONITOR_PORT-}"
 _saved_ab="${AGENT_BRIDGE_PORT-}"
 _saved_fe="${FRONTEND_PORT-}"
@@ -36,16 +46,20 @@ fi
 [ -n "$_saved_ab" ] && AGENT_BRIDGE_PORT="$_saved_ab"
 [ -n "$_saved_fe" ] && FRONTEND_PORT="$_saved_fe"
 
-# 与本机其他 Claw-AI-Lab / PyramidResearchTeam 副本冲突时，可覆盖端口，例如:
+# If ports clash with another Claw-AI-Lab / PyramidResearchTeam copy on this machine, override them, e.g.:
 #   RESOURCE_MONITOR_PORT=8915 AGENT_BRIDGE_PORT=8916 FRONTEND_PORT=5913 ./start.sh
 RESOURCE_MONITOR_PORT="${RESOURCE_MONITOR_PORT:-8905}"
 AGENT_BRIDGE_PORT="${AGENT_BRIDGE_PORT:-8906}"
 FRONTEND_PORT="${FRONTEND_PORT:-5903}"
 export RESOURCE_MONITOR_PORT AGENT_BRIDGE_PORT
 
-# API key is read from config yaml (llm.api_key) by agent_bridge at runtime.
-# Set RESEARCHCLAW_API_KEY env var only if you want to override the config value.
+# API key comes from the secrets file above (or llm.api_key in the config yaml).
 export RESEARCHCLAW_API_KEY="${RESEARCHCLAW_API_KEY:-}"
+
+# Model preset: 2nd arg > $MODEL_PROFILE > `model_profile:` in config.yaml
+PROFILE_FILE_ACTIVE="$(sed -n 's/^model_profile:[[:space:]]*"\{0,1\}\([A-Za-z0-9_-]*\).*/\1/p' "$BASE/config.yaml" 2>/dev/null)"
+MODEL_PROFILE="${2:-${MODEL_PROFILE:-$PROFILE_FILE_ACTIVE}}"
+export MODEL_PROFILE
 
 FNM_DIR="${FNM_DIR:-$HOME/.local/share/fnm}"
 export PATH="$FNM_DIR:$PATH"
@@ -80,12 +94,12 @@ is_port_listening() {
 }
 
 do_start() {
-    echo "🦞 启动龙虾 Agent 军团..."
+    echo "🦞 Starting the Lobster Agent Legion..."
     echo ""
 
     # 1) Resource Monitor
     if is_port_listening "$RESOURCE_MONITOR_PORT"; then
-        echo -e "  ${Y}⏭ resource_monitor 已在运行 (port ${RESOURCE_MONITOR_PORT})${N}"
+        echo -e "  ${Y}⏭ resource_monitor already running (port ${RESOURCE_MONITOR_PORT})${N}"
     else
         nohup $PY -u "$BASE/backend/services/resource_monitor.py" --port "$RESOURCE_MONITOR_PORT" \
             > "$LOG/resource_monitor.log" 2>&1 &
@@ -96,7 +110,7 @@ do_start() {
 
     # 2) Agent Bridge
     if is_port_listening "$AGENT_BRIDGE_PORT"; then
-        echo -e "  ${Y}⏭ agent_bridge 已在运行 (port ${AGENT_BRIDGE_PORT})${N}"
+        echo -e "  ${Y}⏭ agent_bridge already running (port ${AGENT_BRIDGE_PORT})${N}"
     else
         nohup $PY -u "$BASE/backend/services/agent_bridge.py" \
             --port "$AGENT_BRIDGE_PORT" --python "$PY" \
@@ -105,7 +119,6 @@ do_start() {
             --pool-idea 3 --pool-exp 2 --pool-code 3 --pool-exec 4 --pool-write 2 \
             --total-gpus 8 --gpus-per-project 1 \
             --discussion-mode --discussion-rounds 2 \
-            --discussion-models "claude-sonnet-4-6,qwen3.5-plus" \
             ${AUTO_LOOP:+--auto-loop} \
             ${IDEA_COUNT:+--idea-count $IDEA_COUNT} \
             ${IDEA_TOPIC:+--idea-topic "$IDEA_TOPIC"} \
@@ -118,7 +131,7 @@ do_start() {
 
     # 3) Frontend Vite
     if is_port_listening "$FRONTEND_PORT"; then
-        echo -e "  ${Y}⏭ frontend 已在运行 (port ${FRONTEND_PORT})${N}"
+        echo -e "  ${Y}⏭ frontend already running (port ${FRONTEND_PORT})${N}"
     else
         cd "$FE"
         nohup env RESOURCE_MONITOR_PORT="$RESOURCE_MONITOR_PORT" AGENT_BRIDGE_PORT="$AGENT_BRIDGE_PORT" \
@@ -131,9 +144,10 @@ do_start() {
     fi
 
     echo ""
-    echo "📍 服务地址:"
-    echo -e "   ${G}前端 UI:      http://localhost:${FRONTEND_PORT}/${N}"
-    echo "   资源监控 WS:  ws://localhost:${RESOURCE_MONITOR_PORT}"
+    echo "🧠 Model profile: ${MODEL_PROFILE} (config.yaml)"
+    echo "📍 Service addresses:"
+    echo -e "   ${G}Frontend UI:  http://localhost:${FRONTEND_PORT}/${N}"
+    echo "   Resource WS:  ws://localhost:${RESOURCE_MONITOR_PORT}"
     echo "   Agent Bridge: ws://localhost:${AGENT_BRIDGE_PORT}"
     echo ""
     printf 'RESOURCE_MONITOR_PORT=%s\nAGENT_BRIDGE_PORT=%s\nFRONTEND_PORT=%s\n' \
@@ -141,7 +155,7 @@ do_start() {
 }
 
 do_stop() {
-    echo "🛑 停止所有服务..."
+    echo "🛑 Stopping all services..."
     for svc in frontend agent_bridge resource_monitor; do
         f="$PIDF/$svc.pid"
         if [ -f "$f" ]; then
@@ -160,7 +174,7 @@ do_stop() {
 }
 
 do_status() {
-    echo "📊 服务状态:"
+    echo "📊 Service status:"
     for pair in "resource_monitor:${RESOURCE_MONITOR_PORT}" "agent_bridge:${AGENT_BRIDGE_PORT}" "frontend:${FRONTEND_PORT}"; do
         svc="${pair%%:*}"; port="${pair##*:}"
         if is_port_listening "$port"; then
@@ -172,11 +186,11 @@ do_status() {
     echo ""
 }
 
-# 清空 agent_bridge 从磁盘恢复的队列与项目（否则重启后会从中间层继续跑）
+# Clear queues and projects that agent_bridge restores from disk (otherwise a restart resumes mid-pipeline)
 do_reset_state() {
     RUNS="$BASE/backend/runs"
     SHARED="$BASE/backend/shared_results"
-    echo "🧹 清空流水线状态..."
+    echo "🧹 Clearing pipeline state..."
     rm -rf "$RUNS/projects"/* 2>/dev/null
     rm -f "$RUNS/queues"/*.json 2>/dev/null
     mkdir -p "$RUNS/projects" "$RUNS/queues"
@@ -189,8 +203,8 @@ do_reset_state() {
     rm -rf "$SHARED/entries"/* 2>/dev/null
     mkdir -p "$SHARED/entries"
     rm -f "$SHARED/index.json" 2>/dev/null
-    echo -e "  ${G}✅ 已清空: runs/projects, runs/queues, shared_results/idea_runs, idea_pool, knowledge_base, entries${N}"
-    echo "   （未删除 datasets / checkpoints / codebases，避免重复下载大文件）"
+    echo -e "  ${G}✅ Cleared: runs/projects, runs/queues, shared_results/idea_runs, idea_pool, knowledge_base, entries${N}"
+    echo "   (datasets / checkpoints / codebases were kept to avoid re-downloading large files)"
     echo ""
 }
 
@@ -201,5 +215,5 @@ case "${1:-start}" in
     status)       do_status ;;
     reset-state)  do_reset_state ;;
     fresh)        do_stop; sleep 1; do_reset_state; do_start ;;
-    *)            echo "Usage: $0 {start|stop|restart|status|reset-state|fresh}" ;;
+    *)            echo "Usage: $0 {start|stop|restart|status|reset-state|fresh} [eco|quality|custom]" ;;
 esac

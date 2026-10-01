@@ -1,0 +1,115 @@
+# ════════════════════════════════════════════════════════════════════
+#  Claw AI Lab — configuration
+#  • Models: pick a preset below.   • Pipeline: settings further down.
+#  • API keys: NOT here — ~/.config/claw-ai-lab/secrets.env
+#  • __PLACEHOLDERS__ are filled in per project by the app; leave them.
+#  Changes apply to NEW projects after: ./start.sh restart
+# ════════════════════════════════════════════════════════════════════
+
+# ── Models ───────────────────────────────────────────────────────────
+# OpenRouter IDs (https://openrouter.ai/models). Prices: USD per 1M tokens, input / output (Oct 2026).
+# Override once at launch: ./start.sh restart quality   (launch arg > $MODEL_PROFILE > this line)
+model_profile: eco        # eco | quality | custom
+
+model_profiles:
+  # Cheap runs for testing and exploration.
+  eco:
+    primary_model: "deepseek/deepseek-v4-pro"      # $0.21 / $0.42   strong open MoE, ~25x cheaper than gpt-5.6-sol
+    coding_model: "google/gemini-3.8-flash"        # $0.75 / $3.75   best coding per $ among cheap models
+    image_model: "google/gemini-3.1-flash-image"   # $0.50 / $3      Nano Banana 2, near-Pro quality
+    fallback_models:
+      - "openai/gpt-5.6-luna"                      # $0.20 / $1.20
+      - "qwen/qwen3.5-plus-20260420"               # $0.30 / $1.80
+    discussion_models:
+      - "qwen/qwen3.5-plus-20260420"               # $0.30 / $1.80
+      - "openai/gpt-5.6-luna"                      # $0.20 / $1.20
+
+  # Best results. Roughly 10-20x the cost of eco.
+  quality:
+    primary_model: "openai/gpt-5.6-sol"            # $2 / $10   flagship reasoning, research & writing
+    coding_model: "anthropic/claude-opus-5.5"      # $4 / $20   strongest multi-step coding → fewer fix loops
+    image_model: "google/gemini-3-pro-image"       # $2 / $12   Nano Banana Pro, best figures
+    fallback_models:                               # different vendors, so one outage doesn't stall a run
+      - "anthropic/claude-sonnet-5.5"              # $2 / $10
+      - "google/gemini-3.8-flash"                  # $0.75 / $3.75
+    discussion_models:                             # 2 vendors ≠ primary → genuinely different viewpoints
+      - "anthropic/claude-sonnet-5.5"              # $2 / $10
+      - "google/gemini-3.1-pro-preview"            # $2 / $12
+
+  # Your own mix — edit freely. Starts as the README's original defaults.
+  custom:
+    primary_model: "openai/gpt-5.4"                # $2.50 / $15
+    coding_model: "openai/gpt-5.4"                 # $2.50 / $15
+    image_model: "google/gemini-3-pro-image"       # $2 / $12
+    fallback_models:
+      - "qwen/qwen3.5-plus-20260420"               # $0.30 / $1.80
+      - "qwen/qwen-plus"                           # $0.26 / $0.78
+    discussion_models:
+      - "anthropic/claude-sonnet-4.6"              # $3 / $15
+      - "qwen/qwen3.5-plus-20260420"               # $0.30 / $1.80
+
+# ── Pipeline ─────────────────────────────────────────────────────────
+project:
+  name: "__PROJECT_ID__"
+  mode: "full-auto"
+
+research:
+  topic: "__TOPIC__"
+  domains:
+    - "deep-learning"
+  daily_paper_count: 5
+  quality_threshold: 3.0
+  reference_papers: __REFERENCE_PAPERS__
+
+notifications:
+  channel: "console"
+  on_stage_start: true
+  on_gate_required: true
+
+knowledge_base:
+  backend: "markdown"
+  root: "docs/kb"
+
+openclaw_bridge:
+  use_message: false
+  use_memory: false
+  use_web_fetch: false
+
+llm:
+  provider: "openrouter"
+  base_url: "https://openrouter.ai/api/v1"   # OpenRouter
+  api_key: ""   # Leave empty: OpenRouter key is read from RESEARCHCLAW_API_KEY in ~/.config/claw-ai-lab/secrets.env
+  api_key_env: "RESEARCHCLAW_API_KEY"
+  # Models come from the active preset above (model_profile).
+  image_base_url: ""   # Optional: separate API endpoint for image generation; falls back to base_url if empty
+  image_api_key: ""    # Leave empty: set RESEARCHCLAW_IMAGE_API_KEY in ~/.config/claw-ai-lab/secrets.env (falls back to main key)
+
+security:
+  hitl_required_stages: []
+
+experiment:
+  mode: "sandbox"
+  time_budget_sec: 2400
+  max_iterations: 3
+  metric_key: "primary_metric"
+  metric_direction: "minimize"
+  datasets_dir: ""
+  checkpoints_dir: ""
+  codebases_dir: ""
+  shared_results_dir: "runs/shared_results"
+  paper_length: "long"
+  sandbox:
+    python_path: "/Users/akshay/miniconda3/envs/clawailab/bin/python"
+  sanity_check_max_iterations: 100
+
+runtime:
+  timezone: "Asia/Shanghai"
+
+web_search:
+  enabled: true
+  # exa_api_key_env: "EXA_API_KEY"    # Exa AI search (https://exa.ai)
+  # exa_search_type: "auto"            # auto | neural | fast
+  # tavily_api_key_env: "TAVILY_API_KEY"
+
+prompts:
+  custom_file: ""

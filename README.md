@@ -16,6 +16,13 @@
   <a href="https://github.com/Claw-AI-Lab/Claw-AI-Lab"><img src="https://img.shields.io/badge/GitHub-Claw--AI--Lab-6f42c1?logo=github&logoColor=white" alt="GitHub"></a>
 </p>
 
+> **Based on [Claw AI Lab](https://github.com/Claw-AI-Lab/Claw-AI-Lab).** This version changes setup and configuration:
+> - **OpenRouter** as the LLM provider, with **eco / quality / custom** model presets
+> - **One `config.yaml`** at the repo root (replaces `examples/config_template.yaml`)
+> - **API keys outside the repo** in `~/.config/claw-ai-lab/secrets.env`
+> - **English** UI text and log messages; theme follows your system's light/dark setting
+> - A short interface walkthrough: [UI_GUIDE.md](UI_GUIDE.md)
+
 ---
 
 ## 🔥 Updates
@@ -130,58 +137,88 @@ Multi-agent discussion on: **"What is the most deployable direction for Video Ac
 ### 1. Install
 
 ```bash
-git clone https://github.com/Claw-AI-Lab/Claw-AI-Lab.git
-cd Claw-AI-Lab
+git clone https://github.com/akshay-madan/Claw-AI-Lab-OpenRouter.git
+cd Claw-AI-Lab-OpenRouter
 
-# Create python environment
+# Python environment
 conda create -n clawailab python=3.11
 conda activate clawailab
 
 # Backend
+# Newer hatchling rejects the package's `readme = "../../README.md"`,
+# so build with an older hatchling and without build isolation.
 cd backend/agent
-pip install -e ".[all]"
+pip install "hatchling==1.21.1" editables
+pip install --no-build-isolation -e ".[all]"
 pip install websockets
 
 # Frontend
 cd ../../frontend
 npm install
 cd ..
+```
 
-# ML dependencies
-# You can add more packages based on your research project
+**ML dependencies (optional):** install only what your research project needs, e.g.
+
+```bash
 pip install torch torchvision diffusers transformers accelerate safetensors datasets \
             huggingface_hub opencv-python pandas matplotlib scikit-image scipy einops tqdm
 ```
 
 ### 2. Configure
 
-Fill in following configurations in examples/config_template.yaml:
-```
-llm:
-  base_url: "your-api-endpoint"
-  api_key: "your-api-key"
-  primary_model: "gpt-5.4"
-  coding_model: "gpt-5.4"
-  image_model: "gemini-3-pro-image-preview"
-  fallback_models:
-    - "qwen3.5-plus"
-    - "qwen-plus"
+**API key:** keys live outside the repo. Create the secrets file and add your [OpenRouter key](https://openrouter.ai/keys):
 
-sandbox:
-  python_path: "/absolute/path/to/clawailab/bin/python"  # Get this path by running: conda activate clawailab && which python
+```bash
+mkdir -p ~/.config/claw-ai-lab
+cat > ~/.config/claw-ai-lab/secrets.env <<'EOF'
+RESEARCHCLAW_API_KEY=your-openrouter-key
+# Optional
+RESEARCHCLAW_IMAGE_API_KEY=
+EXA_API_KEY=
+TAVILY_API_KEY=
+EOF
+chmod 600 ~/.config/claw-ai-lab/secrets.env
 ```
+
+`start.sh` loads this file on every start. Leave `api_key` empty in `config.yaml`.
+
+**`config.yaml`** (repo root): set these two things.
+
+```yaml
+model_profile: eco        # eco | quality | custom — see Model presets below
+
+experiment:
+  sandbox:
+    python_path: "/absolute/path/to/clawailab/bin/python"  # run: conda activate clawailab && which python
+```
+
+**Model presets** (OpenRouter IDs; prices are USD per 1M tokens, input / output):
+
+| Role | `eco` (default) | `quality` (~10–20× cost) |
+|---|---|---|
+| Primary (research, writing) | `deepseek/deepseek-v4-pro`, $0.21 / $0.42 | `openai/gpt-5.6-sol`, $2 / $10 |
+| Coding | `google/gemini-3.8-flash`, $0.75 / $3.75 | `anthropic/claude-opus-5.5`, $4 / $20 |
+| Images | `google/gemini-3.1-flash-image`, $0.50 / $3 | `google/gemini-3-pro-image`, $2 / $12 |
+| Fallbacks | `gpt-5.6-luna`, `qwen3.5-plus` | `claude-sonnet-5.5`, `gemini-3.8-flash` |
+| Discussion | `qwen3.5-plus`, `gpt-5.6-luna` | `claude-sonnet-5.5`, `gemini-3.1-pro` |
+
+`custom` is your own mix: edit `model_profiles.custom` in `config.yaml`. It starts as the original defaults (`gpt-5.4`). A preset applies to projects created after you switch.
+
+> In `eco`, prompts go to DeepSeek and Qwen models. Use `quality` or `custom` if that matters for your work.
 
 ### 3. Run
 
 ```bash
-./start.sh              # Start all services
+./start.sh              # Start all services (preset from config.yaml)
+./start.sh start quality  # Start with a different preset for this launch
 ./start.sh stop         # Stop
-./start.sh restart      # Restart
+./start.sh restart      # Restart (needed after editing config.yaml or secrets.env)
 ./start.sh status       # Status check
 ./start.sh fresh        # Clean restart (reset all data)
 ```
 
-Open **http://localhost:5903/** → Submit your research topic and let the agents work.
+Open **http://localhost:5903/** → Submit your research topic and let the agents work. New to the interface? See [UI_GUIDE.md](UI_GUIDE.md).
 
 ---
 
@@ -190,19 +227,26 @@ Open **http://localhost:5903/** → Submit your research topic and let the agent
 | # | Recommendation | Why |
 |---|---|---|
 | 1 | **Prepare local codebases, datasets & checkpoints** — enter their paths when submitting a project | Avoids download delays and network failures during runs |
-| 2 | **Use a strong coding model like GPT 5.4** | Significantly better code quality and fewer iteration cycles |
+| 2 | **Use a strong coding model** (the `quality` preset uses Claude Opus 5.5) | Significantly better code quality and fewer iteration cycles |
 | 3 | **Review the `IMPORTANT` fields in [Configuration Details](#️-configuration-details)** | Misconfigured API keys or resource limits are the #1 cause of failed runs |
 
 ---
 
 ## ⚙️ Configuration Details
 
-Every field in `examples/config_template.yaml` explained. Fields marked **IMPORTANT** are the ones you almost always need to set.
+Every field in `config.yaml` explained. Fields marked **IMPORTANT** are the ones you almost always need to set.
 
 <details>
 <summary>Click to expand full reference</summary>
 
 ```yaml
+# === Models ===
+model_profile: eco                # ⚠️ **IMPORTANT** Active preset: "eco" | "quality" | "custom"
+model_profiles:                   # Each preset sets primary_model, coding_model, image_model,
+  eco: { ... }                    #   fallback_models and discussion_models (OpenRouter IDs)
+  quality: { ... }
+  custom: { ... }                 # Your own mix — edit freely
+
 # === Project ===
 project:
   name: "my-project"              # Project identifier, used for directory naming and UI display
@@ -236,15 +280,13 @@ openclaw_bridge:
 
 # === LLM ===
 llm:
-  provider: "openai-compatible"   # LLM provider: "openai-compatible" | "openai" | "deepseek" | "acp"
-  api_key: "sk-your-key"          # ⚠️ **IMPORTANT** API key (or use api_key_env to read from environment)
-  api_key_env: "RESEARCHCLAW_API_KEY"  # Environment variable name for API key (fallback)
-  primary_model: "gpt-5.4"        # ⚠️ **IMPORTANT** Main model for research, analysis, and writing
-  coding_model: "gpt-5.4"         # ⚠️ **IMPORTANT** Model for code generation (S11)
-  image_model: "gemini-3-pro-image-preview"  # ⚠️ **IMPORTANT** Model for figure generation in paper
-  fallback_models:                # Fallback model chain — used when primary model fails
-    - "qwen3.5-plus"
-    - "qwen-plus"
+  provider: "openrouter"          # LLM provider: "openrouter" | "openai-compatible" | "openai" | "deepseek" | "acp"
+  base_url: "https://openrouter.ai/api/v1"  # API endpoint
+  api_key: ""                     # Leave empty — key is read from secrets.env via api_key_env
+  api_key_env: "RESEARCHCLAW_API_KEY"  # ⚠️ **IMPORTANT** Env var holding the API key (set in ~/.config/claw-ai-lab/secrets.env)
+  image_base_url: ""              # Optional separate endpoint for image generation (falls back to base_url)
+  image_api_key: ""               # Leave empty — set RESEARCHCLAW_IMAGE_API_KEY in secrets.env if needed
+  # primary_model / coding_model / image_model / fallback_models come from the active preset
 
 # === Security ===
 security:
