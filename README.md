@@ -183,6 +183,8 @@ chmod 600 ~/.config/claw-ai-lab/secrets.env
 
 `start.sh` loads this file on every start. Leave `api_key` empty in `config.yaml`.
 
+**Key already in another file?** Point `secrets_file:` in `config.yaml` at it. The file can hold `KEY=value` lines, or just the OpenRouter key on its own line.
+
 **`config.yaml`** (repo root): set these two things.
 
 ```yaml

@@ -1,10 +1,17 @@
 # ════════════════════════════════════════════════════════════════════
 #  Claw AI Lab — configuration
 #  • Models: pick a preset below.   • Pipeline: settings further down.
-#  • API keys: NOT here — ~/.config/claw-ai-lab/secrets.env
+#  • API keys: NOT here — in the file named by secrets_file below
 #  • __PLACEHOLDERS__ are filled in per project by the app; leave them.
 #  Changes apply to NEW projects after: ./start.sh restart
 # ════════════════════════════════════════════════════════════════════
+
+# ── API keys ─────────────────────────────────────────────────────────
+# Path to the file holding your keys (read by start.sh; ~ is allowed). Two formats work:
+#   • KEY=value lines: RESEARCHCLAW_API_KEY=..., RESEARCHCLAW_IMAGE_API_KEY=..., EXA_API_KEY=..., TAVILY_API_KEY=...
+#   • just the OpenRouter key on its own line
+# The $CLAW_SECRETS_FILE environment variable overrides this.
+secrets_file: "~/.latch/openrouter.env"
 
 # ── Models ───────────────────────────────────────────────────────────
 # OpenRouter IDs (https://openrouter.ai/models). Prices: USD per 1M tokens, input / output (Oct 2026).
@@ -78,11 +85,11 @@ openclaw_bridge:
 llm:
   provider: "openrouter"
   base_url: "https://openrouter.ai/api/v1"   # OpenRouter
-  api_key: ""   # Leave empty: OpenRouter key is read from RESEARCHCLAW_API_KEY in ~/.config/claw-ai-lab/secrets.env
+  api_key: ""   # Leave empty: OpenRouter key comes from secrets_file (RESEARCHCLAW_API_KEY)
   api_key_env: "RESEARCHCLAW_API_KEY"
   # Models come from the active preset above (model_profile).
   image_base_url: ""   # Optional: separate API endpoint for image generation; falls back to base_url if empty
-  image_api_key: ""    # Leave empty: set RESEARCHCLAW_IMAGE_API_KEY in ~/.config/claw-ai-lab/secrets.env (falls back to main key)
+  image_api_key: ""    # Leave empty: set RESEARCHCLAW_IMAGE_API_KEY in secrets_file (falls back to main key)
 
 security:
   hitl_required_stages: []

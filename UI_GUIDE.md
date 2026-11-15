@@ -64,7 +64,7 @@ Open **http://localhost:5903/** after `./start.sh`.
 
 ## Tips
 
-- LLM provider is **OpenRouter**; all settings are in `config.yaml` (repo root). Put your OpenRouter key in `~/.config/claw-ai-lab/secrets.env`, then `./start.sh restart`.
+- LLM provider is **OpenRouter**; all settings are in `config.yaml` (repo root). Put your OpenRouter key in the file named by `secrets_file:` in `config.yaml` (default `~/.config/claw-ai-lab/secrets.env`), then `./start.sh restart`.
 - Model preset: set `model_profile: eco | quality | custom` at the top of `config.yaml` (edit `custom:` there for your own mix), or override once with `./start.sh restart quality`. Applies to new projects.
 - `./start.sh fresh` = stop + wipe all projects/queues + start (keeps datasets/checkpoints).
 - On a Mac with no NVIDIA GPU, keep experiments small. GPU-heavy runs will be slow or fail.

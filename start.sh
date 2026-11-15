@@ -13,13 +13,25 @@ LOG="$BASE/logs"
 PIDF="$BASE/.pids"
 RUNTIME_PORTS="$BASE/.runtime_ports"
 
-# Load API keys from a private file outside the repo (override path with CLAW_SECRETS_FILE)
-SECRETS_FILE="${CLAW_SECRETS_FILE:-$HOME/.config/claw-ai-lab/secrets.env}"
+# Load API keys from a private file outside the repo.
+# Path: $CLAW_SECRETS_FILE > `secrets_file:` in config.yaml > ~/.config/claw-ai-lab/secrets.env
+_cfg_secrets="$(sed -n 's/^secrets_file:[[:space:]]*"\{0,1\}\([^"#]*[^"#[:space:]]\)"\{0,1\}.*/\1/p' "$BASE/config.yaml" 2>/dev/null)"
+SECRETS_FILE="${CLAW_SECRETS_FILE:-${_cfg_secrets:-$HOME/.config/claw-ai-lab/secrets.env}}"
+case "$SECRETS_FILE" in "~/"*) SECRETS_FILE="$HOME/${SECRETS_FILE#\~/}" ;; esac
 if [ -f "$SECRETS_FILE" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    . "$SECRETS_FILE"
-    set +a
+    if grep -qE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=' "$SECRETS_FILE"; then
+        # KEY=value lines
+        set -a
+        # shellcheck disable=SC1090
+        . "$SECRETS_FILE"
+        set +a
+    else
+        # Bare key: first non-empty line is the OpenRouter key
+        RESEARCHCLAW_API_KEY="$(grep -m1 -vE '^[[:space:]]*(#|$)' "$SECRETS_FILE" | tr -d '[:space:]')"
+        export RESEARCHCLAW_API_KEY
+    fi
+elif [ -n "${CLAW_SECRETS_FILE:-}${_cfg_secrets}" ]; then
+    echo "⚠️  secrets file not found: $SECRETS_FILE" >&2
 fi
 
 # Resolve python path: env PYTHON_PATH > config sandbox.python_path > system python3

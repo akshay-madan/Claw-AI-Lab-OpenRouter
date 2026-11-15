@@ -260,6 +260,8 @@ def _apply_model_profile(content: str, profile: dict) -> str:
     data = _yaml.safe_load(content) or {}
     data.pop("model_profile", None)
     data.pop("model_profiles", None)
+    data.pop("secrets_file", None)
+    data.pop("agent_pool", None)
     llm = data.setdefault("llm", {})
     for key in ("primary_model", "coding_model", "image_model", "fallback_models"):
         if profile.get(key):
