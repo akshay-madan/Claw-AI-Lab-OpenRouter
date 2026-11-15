@@ -55,6 +55,17 @@ model_profiles:
       - "anthropic/claude-sonnet-4.6"              # $3 / $15
       - "qwen/qwen3.5-plus-20260420"               # $0.30 / $1.80
 
+# ── Agents per layer ─────────────────────────────────────────────────
+# Agents each layer starts with. One agent takes one project and runs all of
+# that layer's stages for it, so N agents = up to N projects in that layer at once.
+# You can also add/remove agents live with the + / − buttons in the UI (not saved).
+agent_pool:
+  idea: 3          # L1 research & ideas (S1–S8)
+  experiment: 2    # L2 experiment design (S9)
+  coding: 3        # L3 code & resources (S10–S13)
+  execution: 4     # L4 execution & refinement (S14–S17), also limited by free GPUs
+  writing: 2       # L5 paper writing (S18–S22)
+
 # ── Pipeline ─────────────────────────────────────────────────────────
 project:
   name: "__PROJECT_ID__"

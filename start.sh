@@ -1,6 +1,6 @@
 #!/bin/bash
 # 🦞 Lobster Agent Legion — one-command start/stop
-# Usage: ./start.sh [start|stop|restart|status|reset-state|fresh] [eco|quality|custom]
+# Usage: ./start.sh [start|stop|stop-backend|restart|status|reset-state|fresh] [eco|quality|custom]
 #   eco|quality|custom — model preset (default: `model_profile:` in config.yaml)
 #
 # reset-state — clear persisted pipeline data (projects, queues, Idea factory output, shared knowledge-base index)
@@ -166,21 +166,33 @@ do_start() {
         "$RESOURCE_MONITOR_PORT" "$AGENT_BRIDGE_PORT" "$FRONTEND_PORT" > "$RUNTIME_PORTS"
 }
 
+# Kill a process and all its descendants (pipeline runs and experiments started by agent_bridge)
+kill_tree() {
+    local sig="$1" pid="$2" child
+    for child in $(pgrep -P "$pid" 2>/dev/null); do kill_tree "$sig" "$child"; done
+    kill "-$sig" "$pid" 2>/dev/null
+}
+
+# do_stop [services...]  (default: all). Stopping agent_bridge also stops its running agents.
 do_stop() {
-    echo "🛑 Stopping all services..."
-    for svc in frontend agent_bridge resource_monitor; do
+    local svcs="${*:-frontend agent_bridge resource_monitor}" svc f pid port
+    echo "🛑 Stopping: $svcs"
+    for svc in $svcs; do
         f="$PIDF/$svc.pid"
         if [ -f "$f" ]; then
             pid=$(cat "$f")
-            kill "$pid" 2>/dev/null && sleep 0.5
-            kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+            kill_tree TERM "$pid" && sleep 0.5
+            kill -0 "$pid" 2>/dev/null && kill_tree KILL "$pid"
             rm -f "$f"
             echo -e "  ${G}⏹ $svc (PID=$pid)${N}"
         fi
-    done
-    # Also kill by port in case PID file was stale
-    for port in "$FRONTEND_PORT" "$RESOURCE_MONITOR_PORT" "$AGENT_BRIDGE_PORT"; do
-        lsof -ti:$port 2>/dev/null | xargs -r kill -9 2>/dev/null
+        # Also kill by port in case PID file was stale
+        case "$svc" in
+            frontend) port="$FRONTEND_PORT" ;;
+            agent_bridge) port="$AGENT_BRIDGE_PORT" ;;
+            resource_monitor) port="$RESOURCE_MONITOR_PORT" ;;
+        esac
+        for pid in $(lsof -ti tcp:"$port" -sTCP:LISTEN 2>/dev/null); do kill_tree KILL "$pid"; done
     done
     echo ""
 }
@@ -202,20 +214,20 @@ do_status() {
 do_reset_state() {
     RUNS="$BASE/backend/runs"
     SHARED="$BASE/backend/shared_results"
-    echo "🧹 Clearing pipeline state..."
-    rm -rf "$RUNS/projects"/* 2>/dev/null
-    rm -f "$RUNS/queues"/*.json 2>/dev/null
-    mkdir -p "$RUNS/projects" "$RUNS/queues"
-    rm -rf "$SHARED/idea_runs"/* 2>/dev/null
-    mkdir -p "$SHARED/idea_runs"
-    rm -f "$SHARED/idea_pool"/* 2>/dev/null
-    mkdir -p "$SHARED/idea_pool"
-    rm -rf "$SHARED/knowledge_base"/* 2>/dev/null
-    mkdir -p "$SHARED/knowledge_base"
-    rm -rf "$SHARED/entries"/* 2>/dev/null
-    mkdir -p "$SHARED/entries"
-    rm -f "$SHARED/index.json" 2>/dev/null
+    BK="$BASE/backup/state-$(date +%Y%m%d-%H%M%S)"
+    echo "🧹 Clearing pipeline state (old state is moved to a backup, not deleted)..."
+    mkdir -p "$BK/runs" "$BK/shared_results"
+    for d in projects queues; do
+        [ -e "$RUNS/$d" ] && mv "$RUNS/$d" "$BK/runs/$d"
+    done
+    for d in idea_runs idea_pool knowledge_base entries index.json; do
+        [ -e "$SHARED/$d" ] && mv "$SHARED/$d" "$BK/shared_results/$d"
+    done
+    mkdir -p "$RUNS/projects" "$RUNS/queues" "$SHARED/idea_runs" "$SHARED/idea_pool" \
+             "$SHARED/knowledge_base" "$SHARED/entries"
     echo -e "  ${G}✅ Cleared: runs/projects, runs/queues, shared_results/idea_runs, idea_pool, knowledge_base, entries${N}"
+    echo "   Backup: $BK"
+    echo "   To undo: ./start.sh stop, move its folders back into backend/, then ./start.sh start"
     echo "   (datasets / checkpoints / codebases were kept to avoid re-downloading large files)"
     echo ""
 }
@@ -223,9 +235,10 @@ do_reset_state() {
 case "${1:-start}" in
     start)        do_start ;;
     stop)         do_stop ;;
+    stop-backend) do_stop agent_bridge resource_monitor ;;
     restart)      do_stop; sleep 1; do_start ;;
     status)       do_status ;;
     reset-state)  do_reset_state ;;
     fresh)        do_stop; sleep 1; do_reset_state; do_start ;;
-    *)            echo "Usage: $0 {start|stop|restart|status|reset-state|fresh} [eco|quality|custom]" ;;
+    *)            echo "Usage: $0 {start|stop|stop-backend|restart|status|reset-state|fresh} [eco|quality|custom]" ;;
 esac

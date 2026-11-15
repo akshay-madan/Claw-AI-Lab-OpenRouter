@@ -342,6 +342,7 @@ export interface ProjectInfo {
 
 export type WSMessage =
   | { type: 'agent_update'; payload: LobsterAgent }
+  | { type: 'agent_removed'; payload: { agentId: string } }
   | { type: 'artifact_produced'; payload: Artifact }
   | { type: 'log'; payload: LogEntry }
   | { type: 'stage_update'; payload: { agentId: string; stage: RCStage; status: StageStatus } }

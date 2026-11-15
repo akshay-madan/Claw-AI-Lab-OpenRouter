@@ -9,6 +9,9 @@ interface Props {
   logs: LogEntry[];
   tierIndex: number;
   selectedProjectId?: string | null;
+  connected?: boolean;
+  onAddAgent?: (layer: AgentLayer) => void;
+  onRemoveAgent?: (agentId: string) => void;
 }
 
 const STATUS_ICON: Record<string, string> = {
@@ -21,7 +24,7 @@ const STAGE_ST: Record<string, string> = {
 };
 const DISCUSSION_STAGE = 100;
 
-export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId }: Props) {
+export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId, connected, onAddAgent, onRemoveAgent }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { t, locale } = useLocale();
   const meta = LAYER_META[layer];
@@ -30,6 +33,9 @@ export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId
   const recentLogs = logs.slice(-30);
   const widthPercent = Math.min(100, agents.length * 18 + 20);
   const workingCount = agents.filter((a) => ['working', 'waiting_discussion', 'discussing'].includes(a.status)).length;
+  // Only idle agents can be removed; keep at least one per layer
+  const removable = [...agents].reverse().find((a) => a.status === 'idle');
+  const canRemove = !!removable && agents.length > 1;
 
   return (
     <div
@@ -43,6 +49,21 @@ export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId
           <span className="layer-agent-count">
             {agents.length} 🦞 · {workingCount} {t('layer.active')}
           </span>
+          {connected && onAddAgent && onRemoveAgent && (
+            <span className="layer-agent-controls" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="layer-agent-btn"
+                disabled={!canRemove}
+                title={canRemove ? t('layer.remove_agent') : t('layer.remove_none_idle')}
+                onClick={() => removable && onRemoveAgent(removable.id)}
+              >−</button>
+              <button
+                className="layer-agent-btn"
+                title={t('layer.add_agent')}
+                onClick={() => onAddAgent(layer)}
+              >+</button>
+            </span>
+          )}
           <span className={`expand-icon ${expanded ? 'open' : ''}`}>▼</span>
         </div>
         <div className="layer-stages-bar">

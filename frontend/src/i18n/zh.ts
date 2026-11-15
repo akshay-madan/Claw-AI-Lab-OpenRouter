@@ -12,6 +12,19 @@ const zh: Record<string, string> = {
   'header.stat_artifacts': '📦 产物 {n}',
   'header.theme_light': '切换到浅色主题',
   'header.theme_dark': '切换到深色主题',
+  'system.running': '运行中',
+  'system.stopped': '已停止',
+  'system.starting': '启动中…',
+  'system.stopping': '停止中…',
+  'system.start': '▶ 启动',
+  'system.stop': '⏹ 停止',
+  'system.start_title': '启动 Agent Bridge 和资源监控',
+  'system.stop_title': '停止所有 Agent（已完成阶段会保留）',
+  'system.stop_confirm': '停止所有 Agent？\n\n• 已完成的阶段保存在磁盘上。\n• 正在运行的阶段会被中断，恢复时从该阶段开头重新运行（会重复调用 API）。\n• 启动后排队中的项目会自动继续；被中断的项目会显示“恢复”按钮。\n\n页面保持打开，可随时重新启动。',
+  'system.resume_all': '▶ 全部恢复 ({n})',
+  'system.resume_all_title': '从最后完成的阶段恢复所有被中断的项目',
+  'system.control_failed': '无法{action}系统：\n{error}',
+  'system.status_title': 'Agent Bridge：{state}',
   'header.active': '活跃',
 
   // ProjectPanel
@@ -67,6 +80,9 @@ const zh: Record<string, string> = {
   'layer.discussion': '沟通讨论',
   'layer.log_title': '📋 层级日志',
   'layer.no_logs': '暂无日志',
+  'layer.add_agent': '为该层添加一个 Agent',
+  'layer.remove_agent': '从该层移除一个空闲 Agent',
+  'layer.remove_none_idle': '没有可移除的空闲 Agent（忙碌的 Agent 会继续运行）',
 
   // Layer names
   'layer.idea.name': '第一层 · 调研与创意',

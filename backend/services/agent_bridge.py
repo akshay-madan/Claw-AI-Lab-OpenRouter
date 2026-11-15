@@ -860,6 +860,9 @@ class BridgeState:
 def msg_agent_update(agent: LobsterAgent) -> dict:
     return {"type": "agent_update", "payload": agent.to_frontend()}
 
+def msg_agent_removed(agent_id: str) -> dict:
+    return {"type": "agent_removed", "payload": {"agentId": agent_id}}
+
 def msg_stage_update(agent_id: str, stage: int, status: str) -> dict:
     return {"type": "stage_update", "payload": {"agentId": agent_id, "stage": stage, "status": status}}
 
@@ -1121,6 +1124,25 @@ def poll_agent(agent: LobsterAgent) -> list[dict]:
 
 
 # ── Agent lifecycle ─────────────────────────────────────────────────────────
+
+LAYER_PREFIX = {"idea": "L1", "experiment": "L2", "coding": "L3", "execution": "L4", "writing": "L5"}
+
+
+def _system_agent() -> LobsterAgent:
+    return LobsterAgent(id="system", name="System", layer="idea", run_id="", run_dir="", config_path="")
+
+
+def _next_agent_name(state: BridgeState, layer: str) -> str:
+    """Next free name in a layer: L3·A, L3·B, ..."""
+    prefix = LAYER_PREFIX.get(layer, layer)
+    taken = {getattr(a, "_base_name", a.name) for a in state.agents.values()}
+    for i in range(26 * 26):
+        tag = chr(ord("A") + i) if i < 26 else chr(ord("A") + i // 26 - 1) + chr(ord("A") + i % 26)
+        name = f"{prefix}·{tag}"
+        if name not in taken:
+            return name
+    return f"{prefix}·{_uid()}"
+
 
 def create_agent(state: BridgeState, name: str, layer: str) -> LobsterAgent:
     agent = LobsterAgent(
@@ -2908,17 +2930,29 @@ async def handle_command(state: BridgeState, data: dict) -> list[dict]:
         messages.append(msg_project_list(list_all_projects(state)))
 
     elif cmd == "add_lobster":
-        name = data.get("name", f"Lobster-{_uid()}")
         layer = data.get("layer", "idea")
+        if layer not in LAYER_STAGES:
+            return [msg_log(_system_agent(), f"Unknown layer: {layer}", "error")]
+        name = data.get("name") or _next_agent_name(state, layer)
         agent = create_agent(state, name, layer)
         messages.append(msg_agent_update(agent))
         messages.append(msg_log(agent, f"Lobster joined the {layer} layer", "info"))
+        messages.extend(schedule_idle_agents(state))
 
     elif cmd == "remove_lobster":
+        # Only idle agents can be removed, so no running work is lost
         agent_id = data.get("agentId")
-        agent = state.agents.pop(agent_id, None)
-        if agent:
-            messages.extend(stop_agent(agent))
+        agent = state.agents.get(agent_id)
+        if not agent:
+            pass
+        elif agent.status != "idle" or agent.process is not None or agent.assigned_task_id:
+            messages.append(msg_log(agent, f"{agent.name} is busy; only idle agents can be removed", "warning"))
+        elif sum(1 for a in state.agents.values() if a.layer == agent.layer) <= 1:
+            messages.append(msg_log(agent, f"{agent.name} is the last agent in its layer; keep at least one", "warning"))
+        else:
+            state.agents.pop(agent_id, None)
+            messages.append(msg_agent_removed(agent_id))
+            messages.append(msg_log(agent, f"{agent.name} removed from the {agent.layer} layer", "info"))
 
     elif cmd == "submit_project":
         project_id = data.get("projectId") or f"proj-{_uid()}"
@@ -3335,6 +3369,9 @@ async def main(args: argparse.Namespace):
     pool_sizes = {"idea": args.pool_idea, "experiment": args.pool_exp,
                   "coding": args.pool_code, "execution": args.pool_exec,
                   "writing": args.pool_write}
+    for _layer, _n in (_read_root_config().get("agent_pool") or {}).items():
+        if _layer in pool_sizes and isinstance(_n, int) and _n >= 1:
+            pool_sizes[_layer] = _n
     pool_names = {"idea": "L1", "experiment": "L2", "coding": "L3", "execution": "L4", "writing": "L5"}
     default_pool = []
     for layer, count in pool_sizes.items():

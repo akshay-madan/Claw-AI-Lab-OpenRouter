@@ -3,7 +3,7 @@
 Open **http://localhost:5903/** after `./start.sh`.
 
 ```
-┌──────────────────────────── Header: stats · ☀️/🌙 theme · 中文/EN ───────────────────────────┐
+┌──────── Header: stats · ● Running/Stopped · ▶ Start / ⏹ Stop · Resume all · ☀️/🌙 · 中文/EN ────────┐
 │ PROJECTS (left)       │ RESOURCES + AGENT PYRAMID (center)     │ EVENT LOG + DATA STORES (right) │
 │ submit / manage runs  │ L1 → L5 layers, live agent status      │ live events, download outputs   │
 ├───────────────────────┴────────────────────────────────────────┴─────────────────────────────────┤
@@ -25,7 +25,15 @@ Open **http://localhost:5903/** after `./start.sh`.
 5. **Configuration** *(optional)* — local **codebases / datasets / checkpoints** paths. Strongly recommended: avoids slow or failed downloads.
 6. Click the submit button (**3 Angles Auto-explore**, **N Angles Parallel**, or **Start Reproduce**).
 
-## 2. Manage projects (left panel, project list)
+## 2. Start, stop, resume (header)
+
+- **● Running / ● Stopped** — whether the agent system is up.
+- **⏹ Stop** — stops all agents (asks first). Completed stages are kept; a stage that was mid-run restarts from its beginning on resume. The page stays open.
+- **▶ Start** — starts the agents again. Queued projects continue on their own; interrupted ones get a Resume button.
+- **▶ Resume all (N)** — resumes every interrupted project from its last completed stage.
+- Start/Stop work only from this computer (not from other devices on your network).
+
+## 2b. Manage projects (left panel, project list)
 
 - **Click a project** → selects it; its agents are highlighted in the pyramid, others dimmed.
 - **Expand** → per-stage progress bar plus controls:
@@ -45,6 +53,8 @@ Open **http://localhost:5903/** after `./start.sh`.
   | L4 Execution & Refinement | S14–S17: run → iterate → analyze → decide (PROCEED / REFINE / PIVOT) |
   | L5 Paper Writing | S18–S22: outline → draft → peer review → revision |
 - Agent card status: **Idle · Working · Awaiting Discussion · Discussing · Done · Error**. Click a layer's header to expand it and see its **📋 Layer Logs**.
+- **Stage tracker** (row of icons at the bottom of each agent card): one icon per stage of that layer, for the project the agent is on — ⬜ pending · 🔄 running · ✅ done · ❌ failed · ⏭ skipped · ⏳ waiting · 💬 discussing. Hover an icon for the stage name. The tag on the right is the agent's research angle (e.g. CV).
+- **+ / −** in a layer's header adds or removes an agent. Each agent handles one project at a time and runs all of that layer's stages itself, so more agents = more projects in parallel, not faster single projects. Only idle agents can be removed. Live changes reset on restart; set lasting counts under `agent_pool:` in `config.yaml`.
 - The loop arrow on the right lights up when L4 feeds results back to L1 (REFINE / PIVOT).
 
 ## 4. Get results (right panel)
@@ -66,5 +76,5 @@ Open **http://localhost:5903/** after `./start.sh`.
 
 - LLM provider is **OpenRouter**; all settings are in `config.yaml` (repo root). Put your OpenRouter key in the file named by `secrets_file:` in `config.yaml` (default `~/.config/claw-ai-lab/secrets.env`), then `./start.sh restart`.
 - Model preset: set `model_profile: eco | quality | custom` at the top of `config.yaml` (edit `custom:` there for your own mix), or override once with `./start.sh restart quality`. Applies to new projects.
-- `./start.sh fresh` = stop + wipe all projects/queues + start (keeps datasets/checkpoints).
+- `./start.sh fresh` = stop + clear all projects/queues + start (keeps datasets/checkpoints). Old state is moved to `backup/state-<date>/`, not deleted.
 - On a Mac with no NVIDIA GPU, keep experiments small. GPU-heavy runs will be slow or fail.

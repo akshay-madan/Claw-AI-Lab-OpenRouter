@@ -45,6 +45,8 @@ function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'agent_update':
       return { ...state, agents: upsertAgent(state.agents, action.payload) };
+    case 'agent_removed':
+      return { ...state, agents: state.agents.filter((a) => a.id !== action.payload.agentId) };
     case 'stage_update':
       return {
         ...state,
@@ -147,6 +149,10 @@ export default function App() {
   }), [locale, t]);
   const agentWsRef = useRef<WebSocket | null>(null);
   const resWsRef = useRef<WebSocket | null>(null);
+  // Reconnect immediately (skip back-off), used after the system is started from the UI
+  const agentReconnectRef = useRef<() => void>(() => {});
+  const resReconnectRef = useRef<() => void>(() => {});
+  const [systemBusy, setSystemBusy] = useState<'starting' | 'stopping' | null>(null);
   const mockCleanup = useRef<(() => void) | null>(null);
   const firstListRef = useRef(false);
   const mockModeRef = useRef(false);
@@ -209,6 +215,7 @@ export default function App() {
       }
     }
     connect();
+    agentReconnectRef.current = () => { clearTimeout(timer); reconnects = 0; connect(); };
     return () => { clearTimeout(timer); ws?.close(); ws = null; doStopMock(); };
   }, [agentWsUrl, dispatchMsg, doStopMock, doStartMock]);
 
@@ -241,8 +248,31 @@ export default function App() {
       }
     }
     connect();
+    resReconnectRef.current = () => { clearTimeout(timer); reconnects = 0; connect(); };
     return () => { clearTimeout(timer); ws?.close(); ws = null; };
   }, [resWsUrl]);
+
+  const sendCommand = (payload: Record<string, unknown>) => {
+    const ws = agentWsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
+  };
+
+  const controlSystem = async (action: 'start' | 'stop') => {
+    if (action === 'stop' && !window.confirm(t('system.stop_confirm'))) return;
+    setSystemBusy(action === 'start' ? 'starting' : 'stopping');
+    try {
+      const res = await fetch(`/api/system/${action}`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || body.output || `HTTP ${res.status}`);
+      if (action === 'start') { agentReconnectRef.current(); resReconnectRef.current(); }
+    } catch (e) {
+      window.alert(t('system.control_failed', { action: t(action === 'start' ? 'system.start' : 'system.stop'), error: String(e) }));
+    } finally {
+      setSystemBusy(null);
+    }
+  };
+
+  const interruptedProjects = state.projects.filter((p) => p.status === 'interrupted');
 
   const toggleDiscussionMode = () => {
     const next = !discussionMode;
@@ -317,6 +347,31 @@ export default function App() {
           <span className="stat" dangerouslySetInnerHTML={{ __html: t('header.stat_artifacts', { n: `<b>${state.artifacts.length}</b>` }) }} />
         </div>
         <div className="header-right">
+          <span
+            className={`system-status ${state.connected ? 'on' : 'off'}`}
+            title={t('system.status_title', { state: state.connected ? t('system.running') : t('system.stopped') })}
+          >
+            <span className={`fb-dot ${state.connected ? 'on' : 'off'}`} />
+            {systemBusy ? t(`system.${systemBusy}`) : state.connected ? t('system.running') : t('system.stopped')}
+          </span>
+          {state.connected && interruptedProjects.length > 0 && (
+            <button
+              className="btn-sm system-btn"
+              title={t('system.resume_all_title')}
+              onClick={() => interruptedProjects.forEach((p) => sendCommand({ command: 'resume_project', projectId: p.projectId }))}
+            >
+              {t('system.resume_all', { n: interruptedProjects.length })}
+            </button>
+          )}
+          {state.connected ? (
+            <button className="btn-sm system-btn stop" disabled={!!systemBusy} title={t('system.stop_title')} onClick={() => controlSystem('stop')}>
+              {t('system.stop')}
+            </button>
+          ) : (
+            <button className="btn-sm system-btn start" disabled={!!systemBusy} title={t('system.start_title')} onClick={() => controlSystem('start')}>
+              {t('system.start')}
+            </button>
+          )}
           <button
             className="btn-sm theme-toggle-btn"
             onClick={toggleTheme}
@@ -404,6 +459,9 @@ export default function App() {
                       logs={logMap[layer]}
                       tierIndex={idx}
                       selectedProjectId={state.selectedProjectId}
+                      connected={state.connected && !state.mockMode}
+                      onAddAgent={(l) => sendCommand({ command: 'add_lobster', layer: l })}
+                      onRemoveAgent={(id) => sendCommand({ command: 'remove_lobster', agentId: id })}
                     />
                     {idx < ALL_LAYERS.length - 1 && (
                       <DataFlowArrow active={hasWorking} />

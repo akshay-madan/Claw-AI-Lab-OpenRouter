@@ -12,6 +12,19 @@ const en: Record<string, string> = {
   'header.stat_artifacts': '📦 Artifacts {n}',
   'header.theme_light': 'Switch to Light Theme',
   'header.theme_dark': 'Switch to Dark Theme',
+  'system.running': 'Running',
+  'system.stopped': 'Stopped',
+  'system.starting': 'Starting…',
+  'system.stopping': 'Stopping…',
+  'system.start': '▶ Start',
+  'system.stop': '⏹ Stop',
+  'system.start_title': 'Start the agent bridge and resource monitor',
+  'system.stop_title': 'Stop all agents (completed stages are kept)',
+  'system.stop_confirm': 'Stop all agents?\n\n• Completed stages are kept on disk.\n• A stage that is running now is interrupted and will run again from its start when you resume (its API calls are repeated).\n• Queued projects continue automatically after Start; interrupted ones show a Resume button.\n\nThe page stays open so you can Start again.',
+  'system.resume_all': '▶ Resume all ({n})',
+  'system.resume_all_title': 'Resume every interrupted project from its last completed stage',
+  'system.control_failed': 'Could not {action} the system:\n{error}',
+  'system.status_title': 'Agent bridge: {state}',
   'header.active': 'Active',
 
   // ProjectPanel
@@ -67,6 +80,9 @@ const en: Record<string, string> = {
   'layer.discussion': 'Discussion',
   'layer.log_title': '📋 Layer Logs',
   'layer.no_logs': 'No logs yet',
+  'layer.add_agent': 'Add an agent to this layer',
+  'layer.remove_agent': 'Remove an idle agent from this layer',
+  'layer.remove_none_idle': 'No idle agent to remove (busy agents keep running)',
 
   // Layer names
   'layer.idea.name': 'L1 · Research & Ideas',
