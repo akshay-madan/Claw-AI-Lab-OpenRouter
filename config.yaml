@@ -3,11 +3,11 @@
 #  • Models: pick a preset below.   • Pipeline: settings further down.
 #  • API keys: NOT here — in the file named by secrets_file below
 #  • __PLACEHOLDERS__ are filled in per project by the app; leave them.
-#  Changes apply to NEW projects after: ./start.sh restart
+#  Changes apply to NEW projects after: ./lab.sh restart-app
 # ════════════════════════════════════════════════════════════════════
 
 # ── API keys ─────────────────────────────────────────────────────────
-# Path to the file holding your keys (read by start.sh; ~ is allowed). Two formats work:
+# Path to the file holding your keys (read by lab.sh; ~ is allowed). Two formats work:
 #   • KEY=value lines: RESEARCHCLAW_API_KEY=..., RESEARCHCLAW_IMAGE_API_KEY=..., EXA_API_KEY=..., TAVILY_API_KEY=...
 #   • just the OpenRouter key on its own line
 # The $CLAW_SECRETS_FILE environment variable overrides this.
@@ -15,7 +15,7 @@ secrets_file: "~/.latch/openrouter.env"
 
 # ── Models ───────────────────────────────────────────────────────────
 # OpenRouter IDs (https://openrouter.ai/models). Prices: USD per 1M tokens, input / output (Oct 2026).
-# Override once at launch: ./start.sh restart quality   (launch arg > $MODEL_PROFILE > this line)
+# Override once at launch: ./lab.sh restart-app quality   (launch arg > $MODEL_PROFILE > this line)
 model_profile: eco        # eco | quality | custom
 
 model_profiles:

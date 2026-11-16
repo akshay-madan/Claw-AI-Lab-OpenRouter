@@ -181,7 +181,7 @@ EOF
 chmod 600 ~/.config/claw-ai-lab/secrets.env
 ```
 
-`start.sh` loads this file on every start. Leave `api_key` empty in `config.yaml`.
+`lab.sh` loads this file on every start. Leave `api_key` empty in `config.yaml`.
 
 **Key already in another file?** Point `secrets_file:` in `config.yaml` at it. The file can hold `KEY=value` lines, or just the OpenRouter key on its own line.
 
@@ -212,12 +212,15 @@ experiment:
 ### 3. Run
 
 ```bash
-./start.sh              # Start all services (preset from config.yaml)
-./start.sh start quality  # Start with a different preset for this launch
-./start.sh stop         # Stop
-./start.sh restart      # Restart (needed after editing config.yaml or secrets.env)
-./start.sh status       # Status check
-./start.sh fresh        # Clean restart (reset all data)
+./lab.sh start-app            # Start everything: web page + agents (preset from config.yaml)
+./lab.sh start-app quality    # Same, with a different preset for this launch
+./lab.sh stop-app             # Stop everything
+./lab.sh restart-app          # Restart (needed after editing config.yaml or the secrets file)
+./lab.sh start-agents         # Start only the agents (same as ▶ Start on the page)
+./lab.sh stop-agents          # Stop only the agents; page stays up (same as ⏹ Stop)
+./lab.sh status               # What is running
+./lab.sh fresh                # Clean restart (old data moved to backup/)
+./lab.sh                      # List all commands
 ```
 
 Open **http://localhost:5903/** → Submit your research topic and let the agents work. New to the interface? See [UI_GUIDE.md](UI_GUIDE.md).

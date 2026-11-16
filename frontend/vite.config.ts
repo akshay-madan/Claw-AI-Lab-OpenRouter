@@ -10,8 +10,8 @@ const agentPort = process.env.AGENT_BRIDGE_PORT || '8906'
 // The frontend itself keeps running so the page can start things again.
 // Fixed commands only, and only for requests from this machine.
 function systemControl(): Plugin {
-  const startScript = path.resolve(__dirname, '..', 'start.sh')
-  const commands: Record<string, string> = { start: 'start', stop: 'stop-backend' }
+  const labScript = path.resolve(__dirname, '..', 'lab.sh')
+  const commands: Record<string, string> = { start: 'start-agents', stop: 'stop-agents' }
   return {
     name: 'claw-system-control',
     configureServer(server) {
@@ -26,7 +26,7 @@ function systemControl(): Plugin {
         }
         if (req.method !== 'POST' || !commands[action]) return send(404, { ok: false, error: 'unknown action' })
         if (!isLocal) return send(403, { ok: false, error: 'only allowed from this computer' })
-        execFile('bash', [startScript, commands[action]], { cwd: path.dirname(startScript), timeout: 60_000 },
+        execFile('bash', [labScript, commands[action]], { cwd: path.dirname(labScript), timeout: 60_000 },
           (err, stdout, stderr) => send(err ? 500 : 200, { ok: !err, output: `${stdout}${stderr}` }))
       })
     },

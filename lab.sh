@@ -1,11 +1,19 @@
 #!/bin/bash
-# 🦞 Lobster Agent Legion — one-command start/stop
-# Usage: ./start.sh [start|stop|stop-backend|restart|status|reset-state|fresh] [eco|quality|custom]
-#   eco|quality|custom — model preset (default: `model_profile:` in config.yaml)
+# 🦞 Claw AI Lab — start / stop the app
+# Usage: ./lab.sh <command> [eco|quality|custom]
 #
-# reset-state — clear persisted pipeline data (projects, queues, Idea factory output, shared knowledge-base index)
-#               Run stop first; otherwise agent_bridge may write files back.
-# fresh       — stop → reset-state → start (fresh run from scratch)
+#   start-app       start everything: web page server + agents (agent bridge, resource monitor)
+#   stop-app        stop everything
+#   restart-app     stop-app, then start-app
+#   start-agents    start only the agents (the page's ▶ Start button does this)
+#   stop-agents     stop only the agents; the page stays up (the page's ⏹ Stop button)
+#   restart-agents  stop-agents, then start-agents
+#   status          show what is running
+#   reset-state     clear projects, queues and shared results (moved to backup/, not deleted).
+#                   Run stop-app first; otherwise agent_bridge may write files back.
+#   fresh           stop-app → reset-state → start-app (fresh run from scratch)
+#
+#   eco|quality|custom — model preset for this launch (default: `model_profile:` in config.yaml)
 
 BASE="$(cd "$(dirname "$0")" && pwd)"
 FE="$BASE/frontend"
@@ -59,7 +67,7 @@ fi
 [ -n "$_saved_fe" ] && FRONTEND_PORT="$_saved_fe"
 
 # If ports clash with another Claw-AI-Lab / PyramidResearchTeam copy on this machine, override them, e.g.:
-#   RESOURCE_MONITOR_PORT=8915 AGENT_BRIDGE_PORT=8916 FRONTEND_PORT=5913 ./start.sh
+#   RESOURCE_MONITOR_PORT=8915 AGENT_BRIDGE_PORT=8916 FRONTEND_PORT=5913 ./lab.sh start-app
 RESOURCE_MONITOR_PORT="${RESOURCE_MONITOR_PORT:-8905}"
 AGENT_BRIDGE_PORT="${AGENT_BRIDGE_PORT:-8906}"
 FRONTEND_PORT="${FRONTEND_PORT:-5903}"
@@ -105,7 +113,9 @@ is_port_listening() {
     return 1
 }
 
+# do_start [agents-only]  (default: also start the web page server)
 do_start() {
+    local what="${1:-app}"
     echo "🦞 Starting the Lobster Agent Legion..."
     echo ""
 
@@ -142,7 +152,9 @@ do_start() {
     fi
 
     # 3) Frontend Vite
-    if is_port_listening "$FRONTEND_PORT"; then
+    if [ "$what" = agents-only ]; then
+        :
+    elif is_port_listening "$FRONTEND_PORT"; then
         echo -e "  ${Y}⏭ frontend already running (port ${FRONTEND_PORT})${N}"
     else
         cd "$FE"
@@ -227,18 +239,20 @@ do_reset_state() {
              "$SHARED/knowledge_base" "$SHARED/entries"
     echo -e "  ${G}✅ Cleared: runs/projects, runs/queues, shared_results/idea_runs, idea_pool, knowledge_base, entries${N}"
     echo "   Backup: $BK"
-    echo "   To undo: ./start.sh stop, move its folders back into backend/, then ./start.sh start"
+    echo "   To undo: ./lab.sh stop-app, move its folders back into backend/, then ./lab.sh start-app"
     echo "   (datasets / checkpoints / codebases were kept to avoid re-downloading large files)"
     echo ""
 }
 
-case "${1:-start}" in
-    start)        do_start ;;
-    stop)         do_stop ;;
-    stop-backend) do_stop agent_bridge resource_monitor ;;
-    restart)      do_stop; sleep 1; do_start ;;
-    status)       do_status ;;
-    reset-state)  do_reset_state ;;
-    fresh)        do_stop; sleep 1; do_reset_state; do_start ;;
-    *)            echo "Usage: $0 {start|stop|stop-backend|restart|status|reset-state|fresh} [eco|quality|custom]" ;;
+case "${1:-}" in
+    start-app)      do_start ;;
+    stop-app)       do_stop ;;
+    restart-app)    do_stop; sleep 1; do_start ;;
+    start-agents)   do_start agents-only ;;
+    stop-agents)    do_stop agent_bridge resource_monitor ;;
+    restart-agents) do_stop agent_bridge resource_monitor; sleep 1; do_start agents-only ;;
+    status)         do_status ;;
+    reset-state)    do_reset_state ;;
+    fresh)          do_stop; sleep 1; do_reset_state; do_start ;;
+    *)              sed -n '3,17p' "$0" | sed 's/^# \{0,1\}//'; [ -n "${1:-}" ] && exit 1 ;;
 esac

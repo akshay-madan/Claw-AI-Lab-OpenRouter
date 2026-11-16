@@ -1,6 +1,6 @@
 # Claw AI Lab — UI Guide
 
-Open **http://localhost:5903/** after `./start.sh`.
+Open **http://localhost:5903/** after `./lab.sh start-app`.
 
 ```
 ┌──────── Header: stats · ● Running/Stopped · ▶ Start / ⏹ Stop · Resume all · ☀️/🌙 · 中文/EN ────────┐
@@ -74,7 +74,7 @@ Open **http://localhost:5903/** after `./start.sh`.
 
 ## Tips
 
-- LLM provider is **OpenRouter**; all settings are in `config.yaml` (repo root). Put your OpenRouter key in the file named by `secrets_file:` in `config.yaml` (default `~/.config/claw-ai-lab/secrets.env`), then `./start.sh restart`.
-- Model preset: set `model_profile: eco | quality | custom` at the top of `config.yaml` (edit `custom:` there for your own mix), or override once with `./start.sh restart quality`. Applies to new projects.
-- `./start.sh fresh` = stop + clear all projects/queues + start (keeps datasets/checkpoints). Old state is moved to `backup/state-<date>/`, not deleted.
+- LLM provider is **OpenRouter**; all settings are in `config.yaml` (repo root). Put your OpenRouter key in the file named by `secrets_file:` in `config.yaml` (default `~/.config/claw-ai-lab/secrets.env`), then `./lab.sh restart-app`.
+- Model preset: set `model_profile: eco | quality | custom` at the top of `config.yaml` (edit `custom:` there for your own mix), or override once with `./lab.sh restart-app quality`. Applies to new projects.
+- `./lab.sh fresh` = stop + clear all projects/queues + start (keeps datasets/checkpoints). Old state is moved to `backup/state-<date>/`, not deleted.
 - On a Mac with no NVIDIA GPU, keep experiments small. GPU-heavy runs will be slow or fail.
