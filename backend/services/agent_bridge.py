@@ -66,6 +66,19 @@ LAYER_RANGE: dict[str, tuple[int, int]] = {
     "writing": (19, 22),
 }
 
+LAYER_ORDER: list[str] = ["idea", "experiment", "coding", "execution", "writing"]
+
+# Files a user may supply when starting a project at a later layer, and the
+# stage folder each is written to (where _read_prior_artifact will find it).
+START_INPUT_FILES: dict[str, int] = {
+    "hypotheses.md": 8,
+    "exp_plan.yaml": 9,
+    "experiment/main.py": 11,
+    "analysis.md": 16,
+    "experiment_summary.json": 16,
+    "decision.md": 17,
+}
+
 LAYER_RANGE_PHASE1: dict[str, tuple[int, int]] = {"idea": (1, 7)}
 LAYER_RANGE_PHASE2: dict[str, tuple[int, int]] = {"idea": (8, 8)}
 
@@ -262,6 +275,7 @@ def _apply_model_profile(content: str, profile: dict) -> str:
     data.pop("model_profiles", None)
     data.pop("secrets_file", None)
     data.pop("agent_pool", None)
+    data.pop("disabled_layers", None)
     llm = data.setdefault("llm", {})
     for key in ("primary_model", "coding_model", "image_model", "fallback_models"):
         if profile.get(key):
@@ -467,6 +481,7 @@ def _restart_project(state: "BridgeState", project_id: str) -> list[dict]:
                 shutil.rmtree(item, ignore_errors=True)
             else:
                 item.unlink(missing_ok=True)
+        _restore_start_inputs(proj_dir, meta)
         messages.append(msg_log(sys_agent, f"Project [{project_id}] progress cleared, restarting…", "info"))
         messages.extend(resume_project(state, project_id))
     else:
@@ -477,9 +492,19 @@ def _restart_project(state: "BridgeState", project_id: str) -> list[dict]:
                 shutil.rmtree(item, ignore_errors=True)
             else:
                 item.unlink(missing_ok=True)
+        _restore_start_inputs(proj_dir, meta)
         messages.append(msg_log(sys_agent, f"Project [{project_id}] progress cleared, restarting…", "info"))
         messages.extend(submit_new_project(state, project_id, config_path, topic, mode=mode))
     return messages
+
+
+def _restore_start_inputs(proj_dir: Path, meta: dict | None) -> None:
+    """Re-write user-supplied starting inputs after a restart cleared the run folder."""
+    if not meta or not isinstance(meta.get("start_inputs"), dict):
+        return
+    run_dir = proj_dir / str(meta.get("start_inputs_dir") or "")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    _write_start_inputs(run_dir, meta["start_inputs"])
 
 
 def _delete_project(state: "BridgeState", project_id: str) -> list[dict]:
@@ -847,6 +872,8 @@ class BridgeState:
     _fail_counts: dict[str, int] = field(default_factory=dict)  # project_id → consecutive fail count
     # Lab mode: track which sub-projects belong to the same batch
     lab_batches: dict[str, list[str]] = field(default_factory=dict)  # base_id → [sub_project_ids]
+    # Layers switched off for NEW projects (their stages are added to the project's skip list)
+    disabled_layers: set[str] = field(default_factory=set)
 
     def projects_dir(self) -> Path:
         return Path(self.runs_base_dir) / "projects"
@@ -1024,7 +1051,7 @@ def _sync_completed_stages(
     """Mark all stages from layer_range[0] to done_up_to as completed, emit events for new ones."""
     messages: list[dict] = []
     for s in range(layer_range[0], min(done_up_to, layer_range[1]) + 1):
-        if agent.stage_progress.get(s) == "completed":
+        if agent.stage_progress.get(s) in ("completed", "skipped"):
             continue
         if s not in STAGE_TO_LAYER:
             continue
@@ -1068,6 +1095,7 @@ def poll_agent(agent: LobsterAgent) -> list[dict]:
                 new_stage and new_stage != old_stage
                 and new_stage in STAGE_TO_LAYER
                 and layer_range[0] <= new_stage <= layer_range[1]
+                and agent.stage_progress.get(new_stage) != "skipped"
             ):
                 agent.current_stage = new_stage
                 agent.current_task = f"Stage {new_stage}: {STAGE_NAMES.get(new_stage, '?')}"
@@ -1087,7 +1115,8 @@ def poll_agent(agent: LobsterAgent) -> list[dict]:
 
             if agent.current_stage and done_up_to >= agent.current_stage and done_up_to < layer_range[1]:
                 next_stage = done_up_to + 1
-                if next_stage in STAGE_TO_LAYER and layer_range[0] <= next_stage <= layer_range[1]:
+                if (next_stage in STAGE_TO_LAYER and layer_range[0] <= next_stage <= layer_range[1]
+                        and agent.stage_progress.get(next_stage) != "skipped"):
                     agent.current_stage = next_stage
                     agent.current_task = f"Stage {next_stage}: {STAGE_NAMES.get(next_stage, '?')}"
                     agent.stage_progress[next_stage] = "running"
@@ -1216,6 +1245,14 @@ def _passthrough_agent(agent: LobsterAgent) -> list[dict]:
     return messages
 
 
+def _uses_discussion(state: BridgeState, layer: str, is_reproduce: bool, skip: set[int]) -> bool:
+    """L1 splits into S1–S7 → discussion → S8, unless reproduce mode or S1–S7 are all skipped."""
+    return (
+        state.discussion_mode and layer == "idea" and not is_reproduce
+        and not all(s in skip for s in range(1, 8))
+    )
+
+
 def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -> list[dict]:
     """Assign a task to an agent. Passthrough layers skip process launch."""
     messages: list[dict] = []
@@ -1233,7 +1270,12 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
     # Reproduce mode skips discussion → runs full S1-S8
     _task_meta = _read_project_meta(task.run_dir) if task.run_dir else None
     _is_reproduce = _task_meta.get("mode") == "reproduce" if _task_meta else False
-    if state.discussion_mode and agent.layer == "idea" and not _is_reproduce:
+    skip = _project_skip_stages(state, task.project_id)
+    agent._skip_stages = skip  # type: ignore[attr-defined]
+    for s in skip:
+        if s in agent.stage_progress:
+            agent.stage_progress[s] = "skipped"
+    if _uses_discussion(state, agent.layer, _is_reproduce, skip):
         layer_range = LAYER_RANGE_PHASE1["idea"]
     else:
         layer_range = LAYER_RANGE.get(agent.layer, (1, 15))
@@ -1246,9 +1288,10 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
         resume_stage = last_done + 1
 
         # Discussion mode: if S1-S7 already done, skip straight to discussion/S8
-        if state.discussion_mode and agent.layer == "idea" and not _is_reproduce and last_done >= ts:
+        if _uses_discussion(state, agent.layer, _is_reproduce, skip) and last_done >= ts:
             for s in range(fs, ts + 1):
-                agent.stage_progress[s] = "completed"
+                if agent.stage_progress.get(s) != "skipped":
+                    agent.stage_progress[s] = "completed"
             messages.append(msg_log(
                 agent,
                 f"S1-S7 already complete (checkpoint={last_done}), skipping rerun → going straight to discussion/S8",
@@ -1259,7 +1302,7 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
 
         if fs <= resume_stage <= ts:
             for s in range(fs, resume_stage):
-                if s in STAGE_TO_LAYER:
+                if s in STAGE_TO_LAYER and agent.stage_progress.get(s) != "skipped":
                     agent.stage_progress[s] = "completed"
             fs = resume_stage
             agent.current_stage = fs
@@ -1279,6 +1322,7 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
         "--to-stage", STAGE_NAMES.get(ts, str(ts)),
         "--auto-approve",
         "--skip-preflight",
+        *_skip_args(skip, fs, ts),
     ]
     if task.topic:
         cmd.extend(["--topic", task.topic])
@@ -1297,7 +1341,9 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
         agent.process = proc
         agent.current_task = f"Project {task.project_id} · PID={proc.pid}"
         messages.append(msg_agent_update(agent))
-        messages.append(msg_log(agent, f"Picked up task [{task.project_id}]: launching S{fs}→S{ts} (PID={proc.pid})", "info"))
+        _skipped_here = [s for s in sorted(skip) if fs <= s <= ts]
+        _skip_note = f", skipping {', '.join(f'S{s}' for s in _skipped_here)}" if _skipped_here else ""
+        messages.append(msg_log(agent, f"Picked up task [{task.project_id}]: launching S{fs}→S{ts}{_skip_note} (PID={proc.pid})", "info"))
     except Exception as e:
         agent.status = "error"
         agent.current_task = f"Launch failed: {e}"
@@ -1327,7 +1373,10 @@ def stop_agent(agent: LobsterAgent) -> list[dict]:
 
 # ── Task queue operations ───────────────────────────────────────────────────
 
-def _save_project_meta(run_dir: str, project_id: str, config_path: str, topic: str, mode: str = "lab") -> None:
+def _save_project_meta(
+    run_dir: str, project_id: str, config_path: str, topic: str, mode: str = "lab",
+    extra: dict | None = None,
+) -> None:
     """Persist project metadata so it can be recovered on restart."""
     meta = {
         "project_id": project_id,
@@ -1335,6 +1384,7 @@ def _save_project_meta(run_dir: str, project_id: str, config_path: str, topic: s
         "topic": topic,
         "mode": mode,
         "created_at": _now_ms(),
+        **(extra or {}),
     }
     meta_path = Path(run_dir) / "project_meta.json"
     if not meta_path.exists():
@@ -1343,6 +1393,118 @@ def _save_project_meta(run_dir: str, project_id: str, config_path: str, topic: s
 
 def _read_project_meta(run_dir: str) -> dict | None:
     return _read_json(Path(run_dir) / "project_meta.json")
+
+
+# ── Stage / layer skipping ──────────────────────────────────────────────────
+
+def _effective_skip_stages(
+    state: "BridgeState", skip_stages: object = None, start_layer: str = "",
+) -> list[int]:
+    """User-unticked stages + stages of switched-off layers + stages before start_layer."""
+    skip: set[int] = set()
+    if isinstance(skip_stages, list):
+        for s in skip_stages:
+            try:
+                n = int(s)
+            except (TypeError, ValueError):
+                continue
+            if n in STAGE_TO_LAYER:
+                skip.add(n)
+    for layer in state.disabled_layers:
+        skip.update(LAYER_STAGES.get(layer, []))
+    if start_layer in LAYER_ORDER:
+        for layer in LAYER_ORDER[:LAYER_ORDER.index(start_layer)]:
+            skip.update(LAYER_STAGES[layer])
+    return sorted(skip)
+
+
+def _project_skip_stages(state: "BridgeState", project_id: str) -> set[int]:
+    if not project_id:
+        return set()
+    meta = _read_json(state.projects_dir() / project_id / "project_meta.json")
+    return {int(s) for s in (meta or {}).get("skip_stages", []) if str(s).isdigit()}
+
+
+def _layer_fully_skipped(layer: str, skip: set[int]) -> bool:
+    stages = LAYER_STAGES.get(layer, [])
+    return bool(stages) and all(s in skip for s in stages)
+
+
+def _skip_args(skip: set[int], fs: int, ts: int) -> list[str]:
+    """`--skip-stages` arguments for the stages of fs..ts that this project skips."""
+    in_range = [s for s in sorted(skip) if fs <= s <= ts]
+    return ["--skip-stages", ",".join(str(s) for s in in_range)] if in_range else []
+
+
+def _advance_checkpoint(run_dir: str, stage: int) -> None:
+    """Move a run's checkpoint forward to `stage` (used when a whole layer is skipped)."""
+    if not run_dir:
+        return
+    cp_path = Path(run_dir) / "checkpoint.json"
+    cp = _read_json(cp_path) or {}
+    if int(cp.get("last_completed_stage", 0) or 0) >= stage:
+        return
+    from datetime import datetime, timezone
+    _write_json(cp_path, {
+        "last_completed_stage": stage,
+        "last_completed_name": STAGE_NAMES.get(stage, f"S{stage}"),
+        "run_id": cp.get("run_id", "skipped"),
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    })
+
+
+def _write_start_inputs(run_dir: Path, inputs: dict[str, str]) -> list[str]:
+    """Write user-supplied layer inputs into run_dir/stage-XX/ (whitelisted names only)."""
+    written: list[str] = []
+    for name, content in inputs.items():
+        stage = START_INPUT_FILES.get(name)
+        if stage is None or not isinstance(content, str) or not content.strip():
+            continue
+        target = run_dir / f"stage-{stage:02d}" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        written.append(f"stage-{stage:02d}/{name}")
+    return written
+
+
+def _push_task(state: "BridgeState", queue_name: str, task: "Task") -> list[dict]:
+    """Push a task, passing it straight through layers whose stages this project skips."""
+    messages: list[dict] = []
+    skip = _project_skip_stages(state, task.project_id)
+    sys_agent = _system_agent()
+
+    # Auto-loop feedback: if this project skips research, the loop ends here.
+    if queue_name == "execution_feedback":
+        if not _layer_fully_skipped("idea", skip):
+            state.queues[queue_name].push(task)
+        return messages
+
+    target = task.target_layer
+    while target and _layer_fully_skipped(target, skip):
+        _advance_checkpoint(task.run_dir, LAYER_RANGE[target][1])
+        next_queue = LAYER_OUTPUT_QUEUE.get(target)
+        if target == "writing" or not next_queue:
+            messages.append(msg_log(
+                sys_agent, f"Project [{task.project_id}]: {LAYER_PREFIX.get(target, target)} skipped — no layers left to run", "success",
+            ))
+            return messages
+        next_target = QUEUE_NAMES[next_queue][1]
+        messages.append(msg_log(
+            sys_agent,
+            f"Project [{task.project_id}]: {LAYER_PREFIX.get(target, target)} skipped → passing to {LAYER_PREFIX.get(next_target, next_target)}",
+            "info",
+        ))
+        task.source_layer = target
+        task.target_layer = next_target
+        queue_name = next_queue
+        target = next_target
+
+    state.queues[queue_name].push(task)
+    return messages
+
+
+def msg_layer_settings(state: "BridgeState") -> dict:
+    return {"type": "layer_settings", "payload": {"disabledLayers": sorted(state.disabled_layers)}}
 
 
 def _determine_resume_target(run_dir: str) -> tuple[str, int] | None:
@@ -1369,7 +1531,10 @@ def _queue_for_layer(target_layer: str) -> str:
     return LAYER_INPUT_QUEUE.get(target_layer, "init_to_idea")
 
 
-def submit_new_project(state: BridgeState, project_id: str, config_path: str, topic: str = "", mode: str = "lab") -> list[dict]:
+def submit_new_project(
+    state: BridgeState, project_id: str, config_path: str, topic: str = "", mode: str = "lab",
+    meta_extra: dict | None = None,
+) -> list[dict]:
     """Submit a project — auto-detects checkpoint and resumes from where it left off.
 
     In cross-project discussion mode, each project gets ONE agent.
@@ -1380,7 +1545,7 @@ def submit_new_project(state: BridgeState, project_id: str, config_path: str, to
 
     run_dir = str(state.projects_dir() / project_id)
     os.makedirs(run_dir, exist_ok=True)
-    _save_project_meta(run_dir, project_id, config_path, topic, mode=mode)
+    _save_project_meta(run_dir, project_id, config_path, topic, mode=mode, extra=meta_extra)
 
     if state.discussion_mode:
         messages.append(msg_log(
@@ -1405,7 +1570,7 @@ def submit_new_project(state: BridgeState, project_id: str, config_path: str, to
             source_layer=source_layer, target_layer=target_layer,
             created_at=_now_ms(),
         )
-        state.queues[queue_name].push(task)
+        messages.extend(_push_task(state, queue_name, task))
         stage_name = STAGE_NAMES.get(next_stage, f"S{next_stage}")
         messages.append(msg_log(
             sys_agent,
@@ -1419,8 +1584,8 @@ def submit_new_project(state: BridgeState, project_id: str, config_path: str, to
             source_layer="init", target_layer="idea",
             created_at=_now_ms(),
         )
-        state.queues["init_to_idea"].push(task)
         messages.append(msg_log(sys_agent, f"New project [{project_id}] added to the research queue", "info"))
+        messages.extend(_push_task(state, "init_to_idea", task))
 
     messages.append(msg_queue_update(state.queues))
     return messages
@@ -1500,7 +1665,7 @@ def on_agent_done(state: BridgeState, agent: LobsterAgent) -> list[dict]:
     _agent_proj_dir = state.projects_dir() / agent.project_id if agent.project_id else None
     _agent_meta = _read_project_meta(str(_agent_proj_dir)) if _agent_proj_dir and _agent_proj_dir.exists() else None
     _agent_is_reproduce = _agent_meta.get("mode") == "reproduce" if _agent_meta else False
-    if state.discussion_mode and agent.layer == "idea" and not _agent_is_reproduce:
+    if _uses_discussion(state, agent.layer, _agent_is_reproduce, _project_skip_stages(state, agent.project_id)):
         state.discussion_waiting[agent.id] = agent
         agent.current_stage = DISCUSSION_STAGE
         agent.stage_progress[DISCUSSION_STAGE] = "running"
@@ -1591,8 +1756,8 @@ def on_agent_done(state: BridgeState, agent: LobsterAgent) -> list[dict]:
             _decision_file = Path(agent.run_dir) / "stage-17" / "decision.md"
             _warning_file = Path(agent.run_dir) / "quality_warning.txt"
             _summary_file = Path(agent.run_dir) / "pipeline_summary.json"
-            _is_proceed = False
-            if _decision_file.exists():
+            _is_proceed = 17 in _project_skip_stages(state, agent.project_id)  # no S17 → no gate
+            if not _is_proceed and _decision_file.exists():
                 _dec_text = _decision_file.read_text(encoding="utf-8").upper()
                 _is_proceed = "PROCEED" in _dec_text and "REFINE" not in _dec_text.split("PROCEED")[0][-50:]
             if not _is_proceed and _warning_file.exists():
@@ -1625,12 +1790,12 @@ def on_agent_done(state: BridgeState, agent: LobsterAgent) -> list[dict]:
                 target_layer=target_layer,
                 created_at=_now_ms(),
             )
-            state.queues[output_queue_name].push(follow_task)
             messages.append(msg_log(
                 agent,
                 f"Task complete → project [{agent.project_id}] added to the {output_queue_name} queue",
                 "success",
             ))
+            messages.extend(_push_task(state, output_queue_name, follow_task))
 
     # Release GPU allocation for execution layer
     if agent.layer == "execution" and agent.project_id:
@@ -1707,8 +1872,11 @@ def list_all_projects(state: BridgeState) -> list[dict]:
         timestamp = cp.get("timestamp", "") if cp else ""
 
         first_stage = 1
-        total_stages = 22
-        completed_threshold = total_stages
+        skipped = sorted({int(x) for x in (meta or {}).get("skip_stages", []) if str(x).isdigit()})
+        active = [n for n in range(1, 23) if n not in skipped]
+        total_stages = len(active)
+        completed_threshold = max(active) if active else 0
+        completed_stages = sum(1 for n in active if n <= last_stage)
 
         if last_stage >= completed_threshold:
             status = "completed"
@@ -1749,6 +1917,9 @@ def list_all_projects(state: BridgeState) -> list[dict]:
             "lastCompletedName": last_name,
             "firstStage": first_stage,
             "totalStages": total_stages,
+            "completedStages": completed_stages,
+            "skippedStages": skipped,
+            "startLayer": (meta or {}).get("start_layer", "idea"),
             "timestamp": timestamp,
             "topic": topic,
             "configPath": config_path,
@@ -1838,7 +2009,7 @@ def resume_project(state: BridgeState, project_id: str) -> list[dict]:
                 target_layer=target_layer,
                 created_at=_now_ms(),
             )
-            state.queues[queue_name].push(task)
+            messages.extend(_push_task(state, queue_name, task))
             task_count += 1
 
         if task_count >= 2:
@@ -2010,8 +2181,15 @@ def quick_submit_project(
     reference_papers: list[str] | None = None,
     reference_uploads: list[dict[str, str]] | None = None,
     path_overrides: dict[str, str] | None = None,
+    skip_stages: list[int] | None = None,
+    start_layer: str = "",
+    start_inputs: dict[str, str] | None = None,
 ) -> list[dict]:
     """Create a project from a topic string.
+
+    skip_stages / start_layer / switched-off layers are merged into the project's
+    `skip_stages` (saved in project_meta.json). start_inputs (filename → text) are
+    written into the run folder so the first layer that runs can read them.
 
     Modes:
       - "lab": Multi-angle parallel research (default). If no angles provided,
@@ -2026,6 +2204,32 @@ def quick_submit_project(
         return messages
 
     base_id = project_id or _slugify(topic)
+
+    if start_layer not in LAYER_ORDER:
+        start_layer = "idea"
+    skip = _effective_skip_stages(state, skip_stages, start_layer)
+    inputs = {
+        k: v for k, v in (start_inputs or {}).items()
+        if k in START_INPUT_FILES and isinstance(v, str) and v.strip()
+    }
+    # Research skipped → one run instead of N parallel directions (they'd be identical)
+    single_run = _layer_fully_skipped("idea", set(skip))
+    meta_extra: dict = {
+        "skip_stages": skip,
+        "start_layer": start_layer,
+        "disabled_layers": sorted(state.disabled_layers),
+    }
+    if inputs:
+        meta_extra["start_inputs"] = inputs
+        meta_extra["start_inputs_dir"] = "" if mode == "reproduce" else "run-main"
+    if skip:
+        messages.append(msg_log(
+            sys_agent,
+            f"Skipping stages {', '.join(f'S{s}' for s in skip)}"
+            + (f" (switched-off layers: {', '.join(LAYER_PREFIX[l] for l in LAYER_ORDER if l in state.disabled_layers)})"
+               if state.disabled_layers else ""),
+            "info",
+        ))
 
     # ── Reproduce mode: single-agent standard pipeline ──
     if mode == "reproduce":
@@ -2051,8 +2255,11 @@ def quick_submit_project(
             return messages
         if saved_reference_paths:
             messages.append(msg_log(sys_agent, f"Received {len(saved_reference_paths)} local PDF reference file(s)", "info"))
+        written = _write_start_inputs(project_dir, inputs)
+        if written:
+            messages.append(msg_log(sys_agent, f"Starting inputs saved: {', '.join(written)}", "info"))
         messages.append(msg_log(sys_agent, f"Reproduction mode: project [{base_id}] launched with a single agent running the full pipeline", "success"))
-        messages.extend(submit_new_project(state, base_id, config_path, topic.strip(), mode="reproduce"))
+        messages.extend(submit_new_project(state, base_id, config_path, topic.strip(), mode="reproduce", meta_extra=meta_extra))
         return messages
 
     # ── Lab mode: parallel research (ONE project, N agents — or 1 agent if single direction) ──
@@ -2064,6 +2271,8 @@ def quick_submit_project(
         ]
     if not research_angles or not angles:
         angles = DEFAULT_LAB_ANGLES
+    if single_run:
+        angles = [{"name": "main", "prompt": ""}]
 
     # Deduplicate project id
     existing = state.projects_dir() / base_id
@@ -2088,10 +2297,12 @@ def quick_submit_project(
         messages.append(msg_log(sys_agent, f"Config generation failed: {e}", "error"))
         return messages
 
-    _save_project_meta(str(project_dir), base_id, project_config_path, topic.strip(), mode="lab")
+    _save_project_meta(str(project_dir), base_id, project_config_path, topic.strip(), mode="lab", extra=meta_extra)
 
     messages.append(msg_log(
         sys_agent,
+        f"Lab mode: project [{base_id}] — starting at {LAYER_PREFIX[start_layer]} (research skipped, single run)"
+        if single_run else
         f"Lab mode: project [{base_id}] — researching {len(angles)} directions in parallel",
         "info",
     ))
@@ -2107,6 +2318,10 @@ def quick_submit_project(
         # Each direction gets its own run sub-directory within the project
         run_dir = str(project_dir / f"run-{slug}")
         os.makedirs(run_dir, exist_ok=True)
+        if single_run:
+            written = _write_start_inputs(Path(run_dir), inputs)
+            if written:
+                messages.append(msg_log(sys_agent, f"Starting inputs saved: {', '.join(written)}", "info"))
 
         _po = path_overrides or {}
         try:
@@ -2126,12 +2341,12 @@ def quick_submit_project(
             project_id=base_id,
             run_dir=run_dir,
             config_path=config_path,
-            topic=f"[{name}] {topic.strip()}",
+            topic=topic.strip() if single_run else f"[{name}] {topic.strip()}",
             source_layer="init",
             target_layer="idea",
             created_at=_now_ms(),
         )
-        state.queues["init_to_idea"].push(task)
+        messages.extend(_push_task(state, "init_to_idea", task))
         task_count += 1
 
         messages.append(msg_log(
@@ -2146,11 +2361,12 @@ def quick_submit_project(
 
     messages.append(msg_queue_update(state.queues))
     messages.append(msg_project_list(list_all_projects(state)))
-    messages.append(msg_log(
-        sys_agent,
-        f"After S7, the {task_count} direction agents will discuss automatically → merge into one hypothesis → move to L2",
-        "success",
-    ))
+    if not single_run:
+        messages.append(msg_log(
+            sys_agent,
+            f"After S7, the {task_count} direction agents will discuss automatically → merge into one hypothesis → move to L2",
+            "success",
+        ))
     return messages
 
 
@@ -2503,9 +2719,10 @@ def _skip_discussion_proceed_s8(state: BridgeState, agent: LobsterAgent) -> list
     fs, ts = LAYER_RANGE_PHASE2["idea"]
     agent.status = "working"
     agent.current_task = f"Project {agent.project_id} · S8 hypothesis generation (discussion skipped)"
-    agent.stage_progress[8] = "running"
+    _s8_status = "skipped" if 8 in _project_skip_stages(state, agent.project_id) else "running"
+    agent.stage_progress[8] = _s8_status
     messages.append(msg_agent_update(agent))
-    messages.append(msg_stage_update(agent.id, 8, "running"))
+    messages.append(msg_stage_update(agent.id, 8, _s8_status))
     messages.append(msg_log(agent, "Skipping discussion → launching S8 hypothesis generation directly", "info", 8))
 
     cmd = [
@@ -2514,6 +2731,7 @@ def _skip_discussion_proceed_s8(state: BridgeState, agent: LobsterAgent) -> list
         "--output", agent.run_dir,
         "--from-stage", STAGE_NAMES.get(fs, str(fs)),
         "--to-stage", STAGE_NAMES.get(ts, str(ts)),
+        *_skip_args(_project_skip_stages(state, agent.project_id), fs, ts),
         "--auto-approve",
         "--skip-preflight",
     ]
@@ -2674,9 +2892,10 @@ def _launch_s8_for_agent(state: BridgeState, agent: LobsterAgent, group: Discuss
 
     agent.status = "working"
     agent.current_task = f"Project {group.project_id} · S8 hypothesis generation"
-    agent.stage_progress[8] = "running"
+    _s8_status = "skipped" if 8 in _project_skip_stages(state, agent.project_id) else "running"
+    agent.stage_progress[8] = _s8_status
     messages.append(msg_agent_update(agent))
-    messages.append(msg_stage_update(agent.id, 8, "running"))
+    messages.append(msg_stage_update(agent.id, 8, _s8_status))
     messages.append(msg_log(agent, "Discussion complete → starting hypothesis generation", "info", 8))
 
     cmd = [
@@ -2685,6 +2904,7 @@ def _launch_s8_for_agent(state: BridgeState, agent: LobsterAgent, group: Discuss
         "--output", agent.run_dir,
         "--from-stage", STAGE_NAMES.get(fs, str(fs)),
         "--to-stage", STAGE_NAMES.get(ts, str(ts)),
+        *_skip_args(_project_skip_stages(state, agent.project_id), fs, ts),
         "--auto-approve",
         "--skip-preflight",
     ]
@@ -2804,7 +3024,7 @@ def _on_discussion_s8_done(state: BridgeState, agent: LobsterAgent) -> list[dict
             target_layer=target_layer,
             created_at=_now_ms(),
         )
-        state.queues[output_queue_name].push(follow_task)
+        messages.extend(_push_task(state, output_queue_name, follow_task))
         messages.append(msg_log(
             sys_agent,
             f"Project [{merged_project_id}] best hypothesis added to the {output_queue_name} queue → moving to L2 experiment design",
@@ -2928,6 +3148,22 @@ async def handle_command(state: BridgeState, data: dict) -> list[dict]:
             messages.append(msg_agent_update(a))
         messages.append(msg_queue_update(state.queues))
         messages.append(msg_project_list(list_all_projects(state)))
+        messages.append(msg_layer_settings(state))
+
+    elif cmd == "set_layer_enabled":
+        layer = data.get("layer", "")
+        if layer not in LAYER_STAGES:
+            return [msg_log(_system_agent(), f"Unknown layer: {layer}", "error")]
+        if bool(data.get("enabled", True)):
+            state.disabled_layers.discard(layer)
+        else:
+            state.disabled_layers.add(layer)
+        messages.append(msg_layer_settings(state))
+        messages.append(msg_log(
+            _system_agent(),
+            f"{LAYER_PREFIX[layer]} switched {'on' if layer not in state.disabled_layers else 'off'} for new projects",
+            "info",
+        ))
 
     elif cmd == "add_lobster":
         layer = data.get("layer", "idea")
@@ -2958,7 +3194,10 @@ async def handle_command(state: BridgeState, data: dict) -> list[dict]:
         project_id = data.get("projectId") or f"proj-{_uid()}"
         config_path = data.get("configPath", "")
         topic = data.get("topic", "")
-        messages.extend(submit_new_project(state, project_id, config_path, topic))
+        messages.extend(submit_new_project(
+            state, project_id, config_path, topic,
+            meta_extra={"skip_stages": _effective_skip_stages(state, data.get("skipStages"))},
+        ))
         messages.extend(schedule_idle_agents(state))
         messages.append(msg_project_list(list_all_projects(state)))
 
@@ -2994,7 +3233,15 @@ async def handle_command(state: BridgeState, data: dict) -> list[dict]:
             "datasets_dir": data.get("datasetsDir", ""),
             "checkpoints_dir": data.get("checkpointsDir", ""),
         }
-        messages.extend(quick_submit_project(state, topic, project_id, mode, angles, ref_papers, reference_files, path_overrides))
+        skip_stages = data.get("skipStages")
+        start_layer = data.get("startLayer") or ""
+        start_inputs = data.get("startInputs")
+        messages.extend(quick_submit_project(
+            state, topic, project_id, mode, angles, ref_papers, reference_files, path_overrides,
+            skip_stages=skip_stages if isinstance(skip_stages, list) else None,
+            start_layer=start_layer if isinstance(start_layer, str) else "",
+            start_inputs=start_inputs if isinstance(start_inputs, dict) else None,
+        ))
         messages.extend(schedule_idle_agents(state))
         messages.append(msg_project_list(list_all_projects(state)))
 
@@ -3183,6 +3430,7 @@ async def ws_handler(state: BridgeState, websocket: websockets.ServerConnection)
             break
     try:
         await websocket.send(json.dumps(msg_queue_update(state.queues), ensure_ascii=False))
+        await websocket.send(json.dumps(msg_layer_settings(state), ensure_ascii=False))
     except websockets.ConnectionClosed:
         pass
 
@@ -3373,6 +3621,14 @@ async def main(args: argparse.Namespace):
         if _layer in pool_sizes and isinstance(_n, int) and _n >= 1:
             pool_sizes[_layer] = _n
     pool_names = {"idea": "L1", "experiment": "L2", "coding": "L3", "execution": "L4", "writing": "L5"}
+    _layer_alias = {v.lower(): k for k, v in pool_names.items()}
+    for _l in (_read_root_config().get("disabled_layers") or []):
+        _key = str(_l).strip().lower()
+        _key = _layer_alias.get(_key, _key)
+        if _key in LAYER_STAGES:
+            state.disabled_layers.add(_key)
+        else:
+            print(f"[config] Unknown layer in disabled_layers: {_l!r} (use idea/experiment/coding/execution/writing or L1–L5)")
     default_pool = []
     for layer, count in pool_sizes.items():
         for i in range(count):
@@ -3393,6 +3649,7 @@ async def main(args: argparse.Namespace):
     print(f"   Auto-loop:     {'ON' if args.auto_loop else 'OFF'}")
     _disc_info = f"ON ({args.discussion_rounds} rounds, models: {args.discussion_models})" if args.discussion_mode else "OFF"
     print(f"   Discussion:    {_disc_info}")
+    print(f"   Layers off:    {', '.join(pool_names[l] for l in LAYER_ORDER if l in state.disabled_layers) or 'none'}")
     print(f"   Queued tasks:  {queued_tasks}")
     print()
 
