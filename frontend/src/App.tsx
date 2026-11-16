@@ -1,6 +1,6 @@
 import { useReducer, useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { AgentLayer, ALL_LAYERS, ALL_REPOS } from './types';
-import type { AppState, WSMessage, ResourceStats, LobsterAgent, Artifact } from './types';
+import type { AppState, WSMessage, ResourceStats, LobsterAgent, Artifact, PipelineOptions } from './types';
 import { INITIAL_AGENTS, createMockMessageGenerator } from './mock';
 import LayerPanel from './components/LayerPanel';
 import ResourceMonitor from './components/ResourceMonitor';
@@ -84,6 +84,8 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'project_list':
       return { ...state, projects: action.payload };
+    case 'layer_settings':
+      return { ...state, disabledLayers: action.payload.disabledLayers || [] };
     case 'select_project':
       return { ...state, selectedProjectId: action.payload };
     case 'set_mock':
@@ -111,6 +113,7 @@ const INITIAL_STATE: AppState = {
   resConnected: false,
   connected: false,
   mockMode: false,
+  disabledLayers: [],
 };
 
 export default function App() {
@@ -397,6 +400,7 @@ export default function App() {
             selectedProjectId={state.selectedProjectId}
             artifactsByProject={artifactsByProject}
             discussionMode={discussionMode}
+            disabledLayers={state.disabledLayers}
             onToggleDiscussion={toggleDiscussionMode}
             onSelect={(projectId) => dispatch({ type: 'select_project', payload: projectId })}
             onResume={(projectId) => {
@@ -426,7 +430,7 @@ export default function App() {
                 }
               }
             }}
-            onQuickSubmit={(topic, mode, researchAngles, referencePapers, referenceFiles, paths) => {
+            onQuickSubmit={(topic, mode, researchAngles, referencePapers, referenceFiles, paths, pipeline: PipelineOptions) => {
               const ws = agentWsRef.current;
               if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -439,6 +443,9 @@ export default function App() {
                   codebasesDir: paths?.codebases || undefined,
                   datasetsDir: paths?.datasets || undefined,
                   checkpointsDir: paths?.checkpoints || undefined,
+                  skipStages: pipeline.skipStages.length > 0 ? pipeline.skipStages : undefined,
+                  startLayer: pipeline.startLayer !== 'idea' ? pipeline.startLayer : undefined,
+                  startInputs: Object.keys(pipeline.startInputs).length > 0 ? pipeline.startInputs : undefined,
                 }));
               }
             }}
@@ -462,6 +469,9 @@ export default function App() {
                       connected={state.connected && !state.mockMode}
                       onAddAgent={(l) => sendCommand({ command: 'add_lobster', layer: l })}
                       onRemoveAgent={(id) => sendCommand({ command: 'remove_lobster', agentId: id })}
+                      disabled={state.disabledLayers.includes(layer)}
+                      disabledLayers={state.disabledLayers}
+                      onToggleLayer={(l, enabled) => sendCommand({ command: 'set_layer_enabled', layer: l, enabled })}
                     />
                     {idx < ALL_LAYERS.length - 1 && (
                       <DataFlowArrow active={hasWorking} />

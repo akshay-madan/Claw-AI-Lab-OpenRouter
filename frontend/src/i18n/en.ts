@@ -191,6 +191,34 @@ const en: Record<string, string> = {
 
   // Language
   'lang.switch': '中/EN',
+  // Stage / layer skipping
+  "layer.off": "Off",
+  "layer.off_hint": "Switched off: new projects skip this layer and pass straight to the next layer",
+  "layer.off_warning": "Later stages read files this layer writes; they will get empty text unless you supply the files when submitting:",
+  "layer.switch_on": "Switch this layer on for new projects",
+  "layer.switch_off": "Switch this layer off for new projects (they pass straight to the next layer)",
+  "skip.warn_line": "{producer} is skipped: {file} will be empty for {consumers}",
+  "pipeline.toggle": "Pipeline stages",
+  "pipeline.skipped_badge": "Skipped: {stages}",
+  "pipeline.start_at": "Start at",
+  "pipeline.hint": "Untick stages to skip them for this project. Layers switched off in the pyramid are greyed out.",
+  "pipeline.layer_toggle_hint": "Tick or untick all stages of this layer",
+  "pipeline.layer_off": "(switched off)",
+  "pipeline.before_start": "(before the start layer)",
+  "pipeline.skipped": "skipped",
+  "pipeline.inputs_title": "Your inputs for {layer} (* = needed)",
+  "pipeline.input.hypotheses.md": "research hypotheses (normally from S8)",
+  "pipeline.input.exp_plan.yaml": "experiment plan (normally from S9)",
+  "pipeline.input.experiment/main.py": "experiment entry script (normally from S11)",
+  "pipeline.input.analysis.md": "result analysis (normally from S16)",
+  "pipeline.input.experiment_summary.json": "metrics summary (normally from S16)",
+  "pipeline.input.decision.md": "research decision, e.g. PROCEED (normally from S17)",
+  "pipeline.input_placeholder": "Paste text, or upload a file with +",
+  "pipeline.upload": "Upload a file",
+  "pipeline.all_skipped": "Every stage is skipped; the project will finish without running anything.",
+  "pipeline.warn_foot": "Stages read files from earlier stages and get empty text when a file is missing. Supply the file above, or keep the stage on.",
+  "pipeline.reset": "Reset to the full pipeline",
+  "pipeline.started_at": "started at {layer}",
 };
 
 export default en;

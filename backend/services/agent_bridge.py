@@ -1418,6 +1418,17 @@ def _effective_skip_stages(
     return sorted(skip)
 
 
+def _stage_ranges(stages: list[int]) -> str:
+    """[1, 2, 3, 5] → 'S1–S3, S5'"""
+    parts: list[str] = []
+    for s in sorted(set(stages)):
+        if parts and parts[-1][1] == s - 1:
+            parts[-1][1] = s
+        else:
+            parts.append([s, s])
+    return ", ".join(f"S{a}" if a == b else f"S{a}–S{b}" for a, b in parts)
+
+
 def _project_skip_stages(state: "BridgeState", project_id: str) -> set[int]:
     if not project_id:
         return set()
@@ -2225,7 +2236,7 @@ def quick_submit_project(
     if skip:
         messages.append(msg_log(
             sys_agent,
-            f"Skipping stages {', '.join(f'S{s}' for s in skip)}"
+            f"Skipping stages {_stage_ranges(skip)}"
             + (f" (switched-off layers: {', '.join(LAYER_PREFIX[l] for l in LAYER_ORDER if l in state.disabled_layers)})"
                if state.disabled_layers else ""),
             "info",

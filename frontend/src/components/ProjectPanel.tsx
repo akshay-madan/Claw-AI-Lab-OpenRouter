@@ -1,6 +1,10 @@
-import { useRef, useState } from 'react';
-import type { ProjectInfo, Artifact } from '../types';
+import { useMemo, useRef, useState } from 'react';
+import { ALL_LAYERS } from '../types';
+import type { ProjectInfo, Artifact, AgentLayer, PipelineOptions } from '../types';
 import { useLocale } from '../i18n';
+import {
+  START_LAYER_INPUTS, layerStages, skipWarnings, stageRangeLabel, stagesBefore, stagesOfLayers,
+} from '../pipeline';
 
 const STATUS_ICONS: Record<string, { color: string; icon: string }> = {
   running:     { color: '#22c55e', icon: '▶' },
@@ -25,6 +29,8 @@ interface Props {
   selectedProjectId: string | null;
   artifactsByProject: Record<string, Artifact[]>;
   discussionMode: boolean;
+  /** Layers switched off for new projects (layer header switch / config.yaml) */
+  disabledLayers: AgentLayer[];
   onToggleDiscussion: () => void;
   onSelect: (projectId: string) => void;
   onResume: (projectId: string) => void;
@@ -37,11 +43,12 @@ interface Props {
     researchAngles: string[],
     referencePapers: string,
     referenceFiles: ReferencePdfUpload[],
-    paths: { codebases?: string; datasets?: string; checkpoints?: string }
+    paths: { codebases?: string; datasets?: string; checkpoints?: string },
+    pipeline: PipelineOptions,
   ) => void;
 }
 
-export default function ProjectPanel({ projects, connected, selectedProjectId, artifactsByProject, discussionMode, onToggleDiscussion, onSelect, onResume, onPause, onRestart, onDelete, onQuickSubmit }: Props) {
+export default function ProjectPanel({ projects, connected, selectedProjectId, artifactsByProject, discussionMode, disabledLayers, onToggleDiscussion, onSelect, onResume, onPause, onRestart, onDelete, onQuickSubmit }: Props) {
   const [panelOpen, setPanelOpen] = useState(true);
   const [mode, setMode] = useState<SubmitMode>('lab');
   const [topicInput, setTopicInput] = useState('');
@@ -56,6 +63,54 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
   const [checkpointsPath, setCheckpointsPath] = useState('');
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const { t, locale } = useLocale();
+
+  // ── Pipeline: stages to skip, starting layer, user-supplied inputs ──
+  const [showPipeline, setShowPipeline] = useState(false);
+  const [startLayer, setStartLayer] = useState<AgentLayer>('idea');
+  const [untickedStages, setUntickedStages] = useState<Set<number>>(new Set());
+  const [startInputs, setStartInputs] = useState<Record<string, string>>({});
+  const lockedStages = useMemo(
+    () => new Set([...stagesOfLayers(disabledLayers), ...stagesBefore(startLayer)]),
+    [disabledLayers, startLayer],
+  );
+  const skipSet = useMemo(() => new Set([...untickedStages, ...lockedStages]), [untickedStages, lockedStages]);
+  const inputSpecs = START_LAYER_INPUTS[startLayer];
+  const providedFiles = useMemo(
+    () => new Set(inputSpecs.filter((sp) => (startInputs[sp.file] || '').trim()).map((sp) => sp.file)),
+    [inputSpecs, startInputs],
+  );
+  const warnings = useMemo(() => skipWarnings(skipSet, providedFiles), [skipSet, providedFiles]);
+  const allSkipped = skipSet.size >= 22;
+
+  const toggleStage = (s: number) => {
+    setUntickedStages((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s); else next.add(s);
+      return next;
+    });
+  };
+  const toggleLayerStages = (layer: AgentLayer) => {
+    const stages = layerStages(layer).filter((s) => !lockedStages.has(s));
+    const allOn = stages.every((s) => !untickedStages.has(s));
+    setUntickedStages((prev) => {
+      const next = new Set(prev);
+      stages.forEach((s) => (allOn ? next.add(s) : next.delete(s)));
+      return next;
+    });
+  };
+  const pickInputFile = async (file: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      const text = await f.text();
+      setStartInputs((prev) => ({ ...prev, [file]: text }));
+    }
+    e.target.value = '';
+  };
+  const resetPipeline = () => {
+    setStartLayer('idea');
+    setUntickedStages(new Set());
+    setStartInputs({});
+  };
 
   const modeInfo: Record<SubmitMode, { label: string; icon: string; placeholder: string; desc: string }> = {
     lab: {
@@ -125,11 +180,19 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
       refPapersInput.trim(),
       referenceFiles.map(({ name, contentBase64 }) => ({ name, contentBase64 })),
       paths,
+      {
+        skipStages: [...skipSet].sort((a, b) => a - b),
+        startLayer,
+        startInputs: Object.fromEntries(
+          inputSpecs.filter((sp) => (startInputs[sp.file] || '').trim()).map((sp) => [sp.file, startInputs[sp.file]]),
+        ),
+      },
     );
     setTopicInput('');
     setAnglesInput('');
     setRefPapersInput('');
     setReferenceFiles([]);
+    setStartInputs({});
   };
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -321,6 +384,135 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
                   </label>
                 </div>
               )}
+              <div className="project-ref-papers-toggle">
+                <button
+                  className="ref-papers-toggle-btn"
+                  type="button"
+                  onClick={() => setShowPipeline(!showPipeline)}
+                >
+                  {showPipeline ? '▾' : '▸'} {t('pipeline.toggle')}
+                  {skipSet.size > 0 && (
+                    <span className="ref-badge" title={t('pipeline.skipped_badge', { stages: stageRangeLabel([...skipSet]) })}>
+                      ⏭{skipSet.size}
+                    </span>
+                  )}
+                  {warnings.length > 0 && <span className="pipeline-warn-badge">⚠{warnings.length}</span>}
+                </button>
+              </div>
+              {showPipeline && (
+                <div className="pipeline-section">
+                  <label className="pipeline-start-row">
+                    <span className="path-label">{t('pipeline.start_at')}</span>
+                    <select
+                      className="pipeline-start-select"
+                      value={startLayer}
+                      onChange={(e) => setStartLayer(e.target.value as AgentLayer)}
+                      disabled={!connected}
+                    >
+                      {ALL_LAYERS.map((l) => (
+                        <option key={l} value={l}>{t(`layer.${l}.name`)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="pipeline-hint">{t('pipeline.hint')}</div>
+
+                  {ALL_LAYERS.map((layer) => {
+                    const stages = layerStages(layer);
+                    const off = disabledLayers.includes(layer);
+                    const beforeStart = ALL_LAYERS.indexOf(layer) < ALL_LAYERS.indexOf(startLayer);
+                    const ticked = stages.filter((s) => !skipSet.has(s)).length;
+                    return (
+                      <div key={layer} className={`pipeline-layer${ticked === 0 ? ' all-skipped' : ''}`}>
+                        <label className="pipeline-layer-name" title={t('pipeline.layer_toggle_hint')}>
+                          <input
+                            type="checkbox"
+                            checked={ticked === stages.length}
+                            ref={(el) => { if (el) el.indeterminate = ticked > 0 && ticked < stages.length; }}
+                            aria-label={t(`layer.${layer}.name`)}
+                            onChange={() => toggleLayerStages(layer)}
+                            disabled={!connected || off || beforeStart}
+                          />
+                          <span>{t(`layer.${layer}.name`)}</span>
+                          {off && <span className="pipeline-layer-note">{t('pipeline.layer_off')}</span>}
+                          {!off && beforeStart && <span className="pipeline-layer-note">{t('pipeline.before_start')}</span>}
+                        </label>
+                        <div className="pipeline-stage-chips">
+                          {stages.map((s) => {
+                            const locked = lockedStages.has(s);
+                            const on = !skipSet.has(s);
+                            return (
+                              <label
+                                key={s}
+                                className={`pipeline-stage-chip${on ? ' on' : ''}${locked ? ' locked' : ''}`}
+                                title={`S${s} ${t(`stage.${s}`)}${on ? '' : ` — ${t('pipeline.skipped')}`}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={on}
+                                  aria-label={`S${s} ${t(`stage.${s}`)}`}
+                                  onChange={() => toggleStage(s)}
+                                  disabled={!connected || locked}
+                                />
+                                {on ? '' : '⏭ '}S{s}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {inputSpecs.length > 0 && (
+                    <div className="pipeline-inputs">
+                      <div className="path-label">{t('pipeline.inputs_title', { layer: t(`layer.${startLayer}.name`) })}</div>
+                      {inputSpecs.map((sp) => (
+                        <div key={sp.file} className="path-field">
+                          <span className="path-label">
+                            {sp.file}{sp.required ? ' *' : ''}
+                            <span className="pipeline-input-desc"> — {t(`pipeline.input.${sp.file}`)}</span>
+                          </span>
+                          <div className="path-input-with-action">
+                            <textarea
+                              className="path-input pipeline-input-text"
+                              rows={3}
+                              placeholder={t('pipeline.input_placeholder')}
+                              value={startInputs[sp.file] || ''}
+                              onChange={(e) => setStartInputs((prev) => ({ ...prev, [sp.file]: e.target.value }))}
+                              disabled={!connected}
+                            />
+                            <label className="path-action-btn pipeline-upload-btn" title={t('pipeline.upload')}>
+                              +
+                              <input
+                                className="hidden-file-input"
+                                type="file"
+                                onChange={(e) => { void pickInputFile(sp.file, e); }}
+                                disabled={!connected}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(warnings.length > 0 || allSkipped) && (
+                    <div className="pipeline-warnings">
+                      {allSkipped && <div>⚠ {t('pipeline.all_skipped')}</div>}
+                      {warnings.map((w) => (
+                        <div key={`${w.producer}:${w.file}`}>
+                          ⚠ {t('skip.warn_line', { file: w.file, producer: `S${w.producer}`, consumers: stageRangeLabel(w.consumers) })}
+                        </div>
+                      ))}
+                      {warnings.length > 0 && <div className="pipeline-warn-foot">{t('pipeline.warn_foot')}</div>}
+                    </div>
+                  )}
+                  {(untickedStages.size > 0 || startLayer !== 'idea') && (
+                    <button className="ref-papers-toggle-btn" type="button" onClick={resetPipeline}>
+                      ↺ {t('pipeline.reset')}
+                    </button>
+                  )}
+                </div>
+              )}
               <button
                 className={`project-go-btn ${mode === 'lab' ? 'lab-mode' : 'reproduce-mode'}`}
                 onClick={submit}
@@ -343,10 +535,10 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
                 const cfg = STATUS_ICONS[proj.status] || STATUS_ICONS.new;
                 const statusLabel = t(`project.status.${proj.status}`);
                 const fs = proj.firstStage || 1;
-                const completedCount = proj.lastCompletedStage >= fs ? proj.lastCompletedStage - fs + 1 : 0;
+                const completedCount = proj.completedStages ?? (proj.lastCompletedStage >= fs ? proj.lastCompletedStage - fs + 1 : 0);
                 const pct = proj.totalStages > 0
                   ? Math.round((completedCount / proj.totalStages) * 100)
-                  : 0;
+                  : proj.status === 'completed' ? 100 : 0;
                 const isSelected = selectedProjectId === proj.projectId;
                 const isExpanded = expandedId === proj.projectId;
                 const arts = artifactsByProject[proj.projectId] || [];
@@ -391,6 +583,15 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
                             </>
                           )}
                         </div>
+
+                        {proj.skippedStages && proj.skippedStages.length > 0 && (
+                          <div className="project-detail-stage" title={t('pipeline.skipped')}>
+                            ⏭ {t('pipeline.skipped_badge', { stages: stageRangeLabel(proj.skippedStages) })}
+                            {proj.startLayer && proj.startLayer !== 'idea' && (
+                              <> · {t('pipeline.started_at', { layer: t(`layer.${proj.startLayer}.name`) })}</>
+                            )}
+                          </div>
+                        )}
 
                         {proj.timestamp && (
                           <div className="project-detail-time">

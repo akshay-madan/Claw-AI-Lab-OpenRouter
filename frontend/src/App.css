@@ -1441,3 +1441,67 @@
 }
 .layer-agent-btn:hover:not(:disabled) { border-color: var(--layer-color, var(--accent)); color: var(--layer-color, var(--accent)); }
 .layer-agent-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ---- Layer on/off switch (skip a whole layer for new projects) ---- */
+.layer-switch {
+  position: relative; width: 30px; height: 16px; padding: 0; flex-shrink: 0;
+  border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface-alt); cursor: pointer; transition: background 0.15s, border-color 0.15s;
+}
+.layer-switch.on { background: var(--layer-color, var(--accent)); border-color: var(--layer-color, var(--accent)); }
+.layer-switch-knob {
+  position: absolute; top: 1px; left: 1px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--text-muted); transition: left 0.15s, background 0.15s;
+}
+.layer-switch.on .layer-switch-knob { left: 15px; background: #fff; }
+.layer-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.layer-off-badge {
+  font-size: 0.6rem; font-weight: 600; padding: 1px 6px; border-radius: 8px;
+  background: var(--surface-alt); color: var(--text-muted); white-space: nowrap;
+}
+.layer-off-warning { color: #f59e0b; font-size: 0.75rem; cursor: help; }
+.layer-panel.layer-disabled .layer-stages-bar,
+.layer-panel.layer-disabled .agent-row { opacity: 0.45; }
+.stage-chip.stage-skipped { text-decoration: line-through; opacity: 0.7; }
+
+/* ---- Pipeline stages (skip stages / start at a layer) ---- */
+.pipeline-section {
+  display: flex; flex-direction: column; gap: 5px; animation: fadeIn 0.2s ease;
+  padding: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+}
+.pipeline-start-row { display: flex; align-items: center; gap: 6px; }
+.pipeline-start-select {
+  flex: 1; min-width: 0; padding: 3px 6px; font-size: 0.62rem; font-family: inherit;
+  background: var(--surface-alt); color: var(--text); border: 1px solid var(--border); border-radius: 5px;
+}
+.pipeline-hint { font-size: 0.55rem; color: var(--text-muted); }
+.pipeline-layer { display: flex; flex-direction: column; gap: 2px; }
+.pipeline-layer.all-skipped .pipeline-layer-name span:first-of-type { text-decoration: line-through; opacity: 0.6; }
+.pipeline-layer-name {
+  display: flex; align-items: center; gap: 4px; font-size: 0.6rem; font-weight: 600; color: var(--text); cursor: pointer;
+}
+.pipeline-layer-name input { margin: 0; }
+.pipeline-layer-note { font-weight: 400; color: var(--text-muted); font-size: 0.55rem; }
+.pipeline-stage-chips { display: flex; flex-wrap: wrap; gap: 3px; padding-left: 16px; }
+.pipeline-stage-chip {
+  display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 999px;
+  border: 1px solid var(--border); font-size: 0.56rem; color: var(--text-muted); cursor: pointer; user-select: none;
+}
+.pipeline-stage-chip { position: relative; }
+.pipeline-stage-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.pipeline-stage-chip.on { border-color: var(--accent); color: var(--text); background: var(--surface-alt); }
+.pipeline-stage-chip.locked { cursor: not-allowed; opacity: 0.5; }
+.pipeline-stage-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pipeline-inputs { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+.pipeline-input-desc { font-weight: 400; }
+.pipeline-input-text { resize: vertical; min-height: 40px; }
+.pipeline-upload-btn { display: flex; align-items: center; justify-content: center; }
+.pipeline-warnings {
+  display: flex; flex-direction: column; gap: 2px; padding: 5px 6px; border-radius: 5px;
+  font-size: 0.56rem; line-height: 1.35; color: var(--text);
+  background: color-mix(in srgb, #f59e0b 14%, transparent); border: 1px solid color-mix(in srgb, #f59e0b 45%, transparent);
+}
+.pipeline-warn-foot { color: var(--text-muted); margin-top: 2px; }
+.pipeline-warn-badge {
+  background: #f59e0b; color: #000; font-size: 0.5rem; padding: 0 5px; border-radius: 8px;
+}

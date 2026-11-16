@@ -191,6 +191,34 @@ const zh: Record<string, string> = {
 
   // Language
   'lang.switch': '中/EN',
+  // Stage / layer skipping
+  "layer.off": "已关闭",
+  "layer.off_hint": "已关闭：新项目跳过这一层，直接进入下一层",
+  "layer.off_warning": "后续阶段会读取这一层产出的文件；除非提交时提供这些文件，否则它们将读到空内容：",
+  "layer.switch_on": "为新项目开启这一层",
+  "layer.switch_off": "为新项目关闭这一层（项目直接进入下一层）",
+  "skip.warn_line": "{producer} 已跳过：{consumers} 读取的 {file} 将为空",
+  "pipeline.toggle": "流水线阶段",
+  "pipeline.skipped_badge": "已跳过：{stages}",
+  "pipeline.start_at": "起始层",
+  "pipeline.hint": "取消勾选即可为本项目跳过对应阶段。在金字塔中关闭的层显示为灰色。",
+  "pipeline.layer_toggle_hint": "勾选或取消勾选这一层的全部阶段",
+  "pipeline.layer_off": "（已关闭）",
+  "pipeline.before_start": "（在起始层之前）",
+  "pipeline.skipped": "已跳过",
+  "pipeline.inputs_title": "{layer} 的输入文件（* = 必需）",
+  "pipeline.input.hypotheses.md": "研究假设（通常由 S8 产出）",
+  "pipeline.input.exp_plan.yaml": "实验方案（通常由 S9 产出）",
+  "pipeline.input.experiment/main.py": "实验入口脚本（通常由 S11 产出）",
+  "pipeline.input.analysis.md": "结果分析（通常由 S16 产出）",
+  "pipeline.input.experiment_summary.json": "指标汇总（通常由 S16 产出）",
+  "pipeline.input.decision.md": "研究决策，例如 PROCEED（通常由 S17 产出）",
+  "pipeline.input_placeholder": "粘贴文本，或点击 + 上传文件",
+  "pipeline.upload": "上传文件",
+  "pipeline.all_skipped": "所有阶段都已跳过，项目将不运行任何阶段直接结束。",
+  "pipeline.warn_foot": "各阶段会读取前面阶段的文件，文件缺失时读到空内容。请在上方提供文件，或保留该阶段。",
+  "pipeline.reset": "恢复完整流水线",
+  "pipeline.started_at": "从 {layer} 开始",
 };
 
 export default zh;
