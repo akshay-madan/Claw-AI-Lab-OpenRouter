@@ -161,6 +161,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     resume = cast(bool, args.resume)
     skip_noncritical = cast(bool, args.skip_noncritical_stage)
     no_graceful_degradation = cast(bool, args.no_graceful_degradation)
+    skip_stages_arg = cast(str | None, getattr(args, "skip_stages", None))
 
     kb_root_path = None
     config = RCConfig.load(config_path, check_paths=False)
@@ -248,6 +249,22 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return 1
 
+    skip_stages: set[Stage] = set()
+    for token in (skip_stages_arg or "").replace(";", ",").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            skip_stages.add(Stage(int(token)) if token.isdigit() else Stage[token.upper()])
+        except (KeyError, ValueError):
+            valid = ", ".join(s.name for s in Stage)
+            print(
+                f"Error: unknown stage to skip '{token}'. "
+                f"Use stage numbers or names: {valid}",
+                file=sys.stderr,
+            )
+            return 1
+
     from researchclaw import __version__
     print(f"ResearchClaw v{__version__} — Starting pipeline")
     print(f"  Run ID:  {run_id}")
@@ -257,6 +274,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"  From:    Stage {int(from_stage)}: {from_stage.name}")
     if to_stage:
         print(f"  To:      Stage {int(to_stage)}: {to_stage.name}")
+    if skip_stages:
+        print(f"  Skip:    {', '.join(f'{int(s)}:{s.name}' for s in sorted(skip_stages))}")
 
     # Hint: OpenCode beast mode
     exp_cfg = getattr(config, "experiment", None)
@@ -279,6 +298,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         stop_on_gate=stop_on_gate,
         skip_noncritical=skip_noncritical,
         kb_root=kb_root_path,
+        skip_stages=frozenset(skip_stages) or None,
     )
 
     done = sum(1 for r in results if r.status.value == "done")
@@ -525,6 +545,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     _ = run_p.add_argument(
         "--to-stage", help="Stop after this stage (inclusive, e.g. HYPOTHESIS_GEN)"
+    )
+    _ = run_p.add_argument(
+        "--skip-stages",
+        help="Comma-separated stages to skip (numbers or names, e.g. 3,4 or "
+             "SEARCH_STRATEGY,LITERATURE_COLLECT). Later stages still run.",
     )
     _ = run_p.add_argument(
         "--auto-approve", action="store_true", help="Auto-approve gate stages"

@@ -42,6 +42,7 @@ def _build_pipeline_summary(
     results: list[StageResult],
     from_stage: Stage,
     run_dir: Path | None = None,
+    skipped: list[Stage] | None = None,
 ) -> dict[str, object]:
     summary: dict[str, object] = {
         "run_id": run_id,
@@ -53,6 +54,7 @@ def _build_pipeline_summary(
         "stages_failed": sum(
             1 for item in results if item.status == StageStatus.FAILED
         ),
+        "stages_skipped": [int(s) for s in (skipped or [])],
         "degraded": any(r.decision == "degraded" for r in results),
         "from_stage": int(from_stage),
         "final_stage": int(results[-1].stage) if results else int(from_stage),
@@ -203,10 +205,17 @@ def execute_pipeline(
     stop_on_gate: bool = False,
     skip_noncritical: bool = False,
     kb_root: Path | None = None,
+    skip_stages: frozenset[Stage] | None = None,
 ) -> list[StageResult]:
-    """Execute pipeline stages sequentially from `from_stage` to `to_stage` (inclusive)."""
+    """Execute pipeline stages sequentially from `from_stage` to `to_stage` (inclusive).
+
+    Stages in `skip_stages` are not executed: they are logged as skipped and the
+    checkpoint advances past them, so later stages run (reading whatever prior
+    artifacts already exist in `run_dir`).
+    """
 
     results: list[StageResult] = []
+    skipped: list[Stage] = []
     started = False
     total_stages = len(STAGE_SEQUENCE)
 
@@ -219,6 +228,13 @@ def execute_pipeline(
 
         stage_num = int(stage)
         prefix = f"[{run_id}] Stage {stage_num:02d}/{total_stages}"
+
+        if skip_stages and stage in skip_stages:
+            print(f"{prefix} {stage.name} — skipped (disabled for this project)")
+            skipped.append(stage)
+            _write_checkpoint(run_dir, stage, run_id)
+            _write_heartbeat(run_dir, stage, run_id)
+            continue
 
         fb_path = run_dir / "human_feedback.jsonl"
         if fb_path.exists():
@@ -327,6 +343,7 @@ def execute_pipeline(
                     stop_on_gate=stop_on_gate,
                     skip_noncritical=skip_noncritical,
                     kb_root=kb_root,
+                    skip_stages=skip_stages,
                 )
                 results.extend(pivot_results)
                 break  # Exit current loop; recursive call handles the rest
@@ -375,6 +392,7 @@ def execute_pipeline(
         results=results,
         from_stage=from_stage,
         run_dir=run_dir,
+        skipped=skipped,
     )
     _write_pipeline_summary(run_dir, summary)
 
