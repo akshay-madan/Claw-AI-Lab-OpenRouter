@@ -235,6 +235,17 @@ Open **http://localhost:5903/** → Submit your research topic and let the agent
 | 2 | **Use a strong coding model** (the `quality` preset uses Claude Opus 5.5) | Significantly better code quality and fewer iteration cycles |
 | 3 | **Review the `IMPORTANT` fields in [Configuration Details](#️-configuration-details)** | Misconfigured API keys or resource limits are the #1 cause of failed runs |
 
+### ⏭ Run only part of the pipeline
+
+You can skip stages or whole layers without removing them, e.g. to run coding only from your own experiment plan:
+
+- **Per project:** in the submit form, open **Pipeline stages** and untick stages (S1–S22), or choose **Start at** a later layer and paste/upload the files it needs (for L3: `hypotheses.md` and `exp_plan.yaml`).
+- **Whole layer, one click:** the switch on each layer header turns that layer off for new projects; they pass straight to the next layer. Set the startup default with `disabled_layers:` in `config.yaml`.
+- The form warns when a skipped stage writes a file that a later stage reads (that stage would get empty text).
+- From the command line: `python -m researchclaw run ... --skip-stages 3,4` (numbers or names).
+
+Details: [UI_GUIDE.md](UI_GUIDE.md#2c-skip-stages-or-layers).
+
 ---
 
 ## ⚙️ Configuration Details
@@ -251,6 +262,16 @@ model_profiles:                   # Each preset sets primary_model, coding_model
   eco: { ... }                    #   fallback_models and discussion_models (OpenRouter IDs)
   quality: { ... }
   custom: { ... }                 # Your own mix — edit freely
+
+# === Agents & layers (app only; not copied into project configs) ===
+agent_pool:                       # Agents per layer at startup (+ / − in the UI changes it live)
+  idea: 3                         #   L1 S1–S8 · experiment L2 S9 · coding L3 S10–S13
+  experiment: 2                   #   execution L4 S14–S18 · writing L5 S19–S22
+  coding: 3
+  execution: 4
+  writing: 2
+disabled_layers: []               # Layers switched off for new projects, e.g. [idea, experiment] or [L1, L2]
+                                  #   (their stages are skipped; the layer switch in the UI changes it live)
 
 # === Project ===
 project:

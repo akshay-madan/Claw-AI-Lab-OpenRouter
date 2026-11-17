@@ -68,7 +68,7 @@ agent_pool:
 
 # ── Layers switched off ──────────────────────────────────────────────
 # Layers listed here start switched off: new projects skip all of that layer's
-# stages and pass straight to the next layer's queue. Projects already queued
+# stages and pass straight to the next layer's queue. Projects submitted earlier
 # are not affected. Flip a layer live with the switch on its header in the UI
 # (not saved). Names: idea | experiment | coding | execution | writing, or L1–L5.
 # Later stages read files the skipped ones would have written; supply them when
