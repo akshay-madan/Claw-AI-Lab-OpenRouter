@@ -521,6 +521,10 @@ class ClawTurnLoop:
 
         if any(model.startswith(p) for p in ("o3", "o4", "gpt-5")):
             body[_tok_key] = 16384
+        elif "openrouter.ai" in cfg.base_url:  # max_tokens includes thinking here
+            body[_tok_key] = 16384
+            if getattr(cfg, "reasoning_effort", ""):
+                body["reasoning"] = {"effort": cfg.reasoning_effort}
 
         payload = json.dumps(body).encode("utf-8")
         headers = {

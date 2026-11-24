@@ -136,6 +136,7 @@ class LlmConfig:
     image_model: str = ""
     image_base_url: str = ""
     image_api_key: str = ""
+    reasoning_effort: str = ""  # OpenRouter only: "low" | "medium" | "high"
     fallback_models: tuple[str, ...] = ()
     s2_api_key: str = ""
     notes: str = ""
@@ -306,6 +307,7 @@ class ExperimentConfig:
     mode: str = "simulated"
     time_budget_sec: int = 3600
     max_iterations: int = 10
+    auto_install_torch: bool = True  # S1 installs PyTorch when it finds a GPU
     max_refine_duration_sec: int = 0  # 0 = auto (3× time_budget_sec)
     metric_key: str = "primary_metric"
     metric_direction: str = "minimize"
@@ -615,6 +617,7 @@ def _parse_llm_config(data: dict[str, Any]) -> LlmConfig:
         image_model=data.get("image_model", ""),
         image_base_url=data.get("image_base_url", ""),
         image_api_key=data.get("image_api_key", ""),
+        reasoning_effort=str(data.get("reasoning_effort") or ""),
         fallback_models=tuple(data.get("fallback_models") or ()),
         s2_api_key=data.get("s2_api_key", ""),
         notes=data.get("notes", ""),
@@ -638,6 +641,7 @@ def _parse_experiment_config(data: dict[str, Any]) -> ExperimentConfig:
         time_budget_sec=int(data.get("time_budget_sec", 3600)),
         max_iterations=int(data.get("max_iterations", 10)),
         max_refine_duration_sec=int(data.get("max_refine_duration_sec", 0)),
+        auto_install_torch=bool(data.get("auto_install_torch", True)),
         metric_key=data.get("metric_key", "primary_metric"),
         metric_direction=data.get("metric_direction", "minimize"),
         keep_threshold=float(data.get("keep_threshold", 0.0)),

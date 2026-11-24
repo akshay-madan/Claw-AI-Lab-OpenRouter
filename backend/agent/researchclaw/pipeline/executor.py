@@ -1746,7 +1746,7 @@ Investigate the topic with emphasis on reproducible methods and measurable outco
         logger.info("Hardware detected: %s (%s, %s MB VRAM)", hw.gpu_name, hw.gpu_type, hw.vram_mb)
 
     # --- Optionally ensure PyTorch is available ---
-    if hw.has_gpu and config.experiment.mode == "sandbox":
+    if hw.has_gpu and config.experiment.mode == "sandbox" and config.experiment.auto_install_torch:
         torch_ok = ensure_torch_available(config.experiment.sandbox.python_path, hw.gpu_type)
         if torch_ok:
             logger.info("PyTorch is available for sandbox experiments")
@@ -5472,7 +5472,7 @@ def _write_paper_sections(
     )
     # R14-1: Higher token limit for reasoning models
     _paper_max_tokens = 12000
-    if any(model_name.startswith(p) for p in ("gpt-5", "o3", "o4")):
+    if any(model_name.split("/")[-1].startswith(p) for p in ("gpt-5", "o3", "o4")):
         _paper_max_tokens = 24000
 
     # T3.5: Retry once on failure, use placeholder if still fails

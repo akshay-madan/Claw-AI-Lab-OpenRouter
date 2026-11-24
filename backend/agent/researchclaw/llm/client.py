@@ -82,6 +82,8 @@ class LLMConfig:
     # MetaClaw bridge: fallback URL if primary (proxy) is unreachable
     fallback_url: str = ""
     fallback_api_key: str = ""
+    # OpenRouter: "low" | "medium" | "high" ("" = the model's own default)
+    reasoning_effort: str = ""
 
 
 class LLMClient:
@@ -135,6 +137,7 @@ class LLMClient:
             timeout_sec=getattr(rc_config.llm, "timeout_sec", 600),
             fallback_url=fallback_url,
             fallback_api_key=fallback_api_key,
+            reasoning_effort=getattr(rc_config.llm, "reasoning_effort", "") or "",
         )
         client = cls(config)
 
@@ -189,6 +192,13 @@ class LLMClient:
         for idx, m in enumerate(models):
             try:
                 resp = self._call_with_retry(m, messages, max_tok, temp, json_mode)
+                # A reasoning model can spend its whole budget thinking and answer nothing
+                if not resp.content.strip() and max_tok >= 256 and idx < len(models) - 1:
+                    logger.warning(
+                        "Model %s returned an empty answer (finish_reason=%s). Trying next.",
+                        m, resp.finish_reason,
+                    )
+                    continue
                 if strip_thinking:
                     from researchclaw.utils.thinking_tags import strip_thinking_tags
                     resp = LLMResponse(
@@ -405,7 +415,15 @@ class LLMClient:
             # Use correct token parameter based on model.
             # Check _NEW_PARAM_MODELS first — "gpt-5.4" must NOT fall through
             # to _RESPONSES_API_MODELS whose "gpt-5" prefix would also match.
-            if any(model.startswith(prefix) for prefix in _NEW_PARAM_MODELS):
+            # OpenRouter IDs carry a vendor prefix ("openai/gpt-5.4"); rules below use the bare name
+            on_openrouter = "openrouter.ai" in self.config.base_url
+            bare_model = model.split("/")[-1] if on_openrouter else model
+            if on_openrouter:
+                # max_tokens includes thinking here: leave reasoning models room to answer
+                body["max_tokens"] = max(max_tokens, 32768) if max_tokens >= 256 else max_tokens
+                if self.config.reasoning_effort:
+                    body["reasoning"] = {"effort": self.config.reasoning_effort}
+            elif any(model.startswith(prefix) for prefix in _NEW_PARAM_MODELS):
                 reasoning_min = 32768
                 body["max_completion_tokens"] = max(max_tokens, reasoning_min)
             elif any(model.startswith(prefix) for prefix in _RESPONSES_API_MODELS):
@@ -418,8 +436,8 @@ class LLMClient:
                 # don't support the response_format parameter and return 400.
                 # Fall back to a system-prompt injection for non-OpenAI models.
                 _use_prompt_injection = (
-                    model.startswith("claude")
-                    or model.startswith("deepseek")
+                    bare_model.startswith("claude")
+                    or bare_model.startswith("deepseek")
                     or "deepseek" in self.config.base_url.lower()
                 )
                 if _use_prompt_injection:

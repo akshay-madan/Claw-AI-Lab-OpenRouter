@@ -278,7 +278,8 @@ def _apply_model_profile(content: str, profile: dict) -> str:
     data.pop("spend_limit_usd", None)
     data.pop("disabled_layers", None)
     llm = data.setdefault("llm", {})
-    for key in ("provider", "base_url", "primary_model", "coding_model", "image_model", "fallback_models"):
+    for key in ("provider", "base_url", "primary_model", "coding_model", "image_model", "fallback_models",
+                "reasoning_effort"):
         if profile.get(key):
             llm[key] = profile[key]
     return _yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
@@ -2395,7 +2396,9 @@ def quick_submit_project(
     if not single_run:
         messages.append(msg_log(
             sys_agent,
-            f"After S7, the {task_count} direction agents will discuss automatically → merge into one hypothesis → move to L2",
+            f"After S7, the {task_count} direction agents will discuss automatically → merge into one hypothesis → move to L2"
+            if state.discussion_mode else
+            f"{task_count} direction(s) will run independently, each with its own hypotheses (no discussion)",
             "success",
         ))
     return messages

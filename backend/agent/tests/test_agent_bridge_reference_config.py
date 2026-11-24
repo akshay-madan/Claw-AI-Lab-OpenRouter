@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import yaml
+
 
 def _load_agent_bridge_module():
     module_path = Path(__file__).resolve().parents[2] / "services" / "agent_bridge.py"
@@ -36,7 +38,10 @@ def test_generate_config_from_template_persists_reference_papers(tmp_path: Path)
     )
 
     content = Path(config_path).read_text(encoding="utf-8")
-    assert 'reference_papers:\n    - "1234.56789"\n    - "/data/papers/local_reference.pdf"' in content
+    assert yaml.safe_load(content)["research"]["reference_papers"] == [
+        "1234.56789",
+        "/data/papers/local_reference.pdf",
+    ]
     assert "__REFERENCE_PAPERS__" not in content
 
 
