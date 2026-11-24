@@ -113,9 +113,22 @@ is_port_listening() {
     return 1
 }
 
+# True when the web page actually loads (an open port alone is not enough:
+# a long-running page server can lose access to its files and answer HTTP 500)
+page_loads() {
+    [ "$(curl -s --noproxy '*' -o /dev/null -m 10 -w '%{http_code}' "http://localhost:${FRONTEND_PORT}/" 2>/dev/null)" = 200 ]
+}
+
+# True when the process on the page port is this project's Vite server
+page_server_is_ours() {
+    local pid
+    pid="$(lsof -ti tcp:"$FRONTEND_PORT" -sTCP:LISTEN 2>/dev/null | head -1)"
+    [ -n "$pid" ] && [ "$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" = "$(cd "$FE" && pwd -P)" ]
+}
+
 # do_start [agents-only]  (default: also start the web page server)
 do_start() {
-    local what="${1:-app}"
+    local what="${1:-app}" rc=0 _i
     echo "🦞 Starting the Lobster Agent Legion..."
     echo ""
 
@@ -154,17 +167,32 @@ do_start() {
     # 3) Frontend Vite
     if [ "$what" = agents-only ]; then
         :
-    elif is_port_listening "$FRONTEND_PORT"; then
+    elif is_port_listening "$FRONTEND_PORT" && page_loads; then
         echo -e "  ${Y}⏭ frontend already running (port ${FRONTEND_PORT})${N}"
+    elif is_port_listening "$FRONTEND_PORT" && ! page_server_is_ours; then
+        echo -e "  ${R}❌ port ${FRONTEND_PORT} is used by another program; page not started${N}"
+        rc=1
     else
+        if is_port_listening "$FRONTEND_PORT"; then
+            echo -e "  ${Y}⚠️  page server is running but the page does not load; restarting it${N}"
+            do_stop frontend >/dev/null
+        fi
         cd "$FE"
         nohup env RESOURCE_MONITOR_PORT="$RESOURCE_MONITOR_PORT" AGENT_BRIDGE_PORT="$AGENT_BRIDGE_PORT" \
             npx vite --host 0.0.0.0 --port "$FRONTEND_PORT" \
             > "$LOG/frontend.log" 2>&1 &
         echo $! > "$PIDF/frontend.pid"
-        sleep 2
-        echo -e "  ${G}✅ frontend (PID=$!)${N}"
         cd "$BASE"
+        for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            sleep 1
+            page_loads && break
+        done
+        if page_loads; then
+            echo -e "  ${G}✅ frontend (PID=$(cat "$PIDF/frontend.pid"))${N}"
+        else
+            echo -e "  ${R}❌ page server started but the page does not load; see $LOG/frontend.log${N}"
+            rc=1
+        fi
     fi
 
     echo ""
@@ -176,6 +204,7 @@ do_start() {
     echo ""
     printf 'RESOURCE_MONITOR_PORT=%s\nAGENT_BRIDGE_PORT=%s\nFRONTEND_PORT=%s\n' \
         "$RESOURCE_MONITOR_PORT" "$AGENT_BRIDGE_PORT" "$FRONTEND_PORT" > "$RUNTIME_PORTS"
+    return $rc
 }
 
 # Kill a process and all its descendants (pipeline runs and experiments started by agent_bridge)
