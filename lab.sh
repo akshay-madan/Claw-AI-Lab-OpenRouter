@@ -33,6 +33,16 @@ if [ -f "$SECRETS_FILE" ]; then
         # shellcheck disable=SC1090
         . "$SECRETS_FILE"
         set +a
+        # Key stored under another name: OPENROUTER_API_KEY, or the only KEY=value in the file
+        if [ -z "${RESEARCHCLAW_API_KEY:-}" ]; then
+            _names="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$SECRETS_FILE" \
+                | grep -vE '^(RESEARCHCLAW_IMAGE_API_KEY|RESEARCHCLAW_API_KEY|EXA_API_KEY|TAVILY_API_KEY)$' | sort -u)"
+            case "$_names" in
+                *[!A-Za-z0-9_]*) _names="OPENROUTER_API_KEY" ;;   # several names: use the usual one
+            esac
+            [ -n "$_names" ] && RESEARCHCLAW_API_KEY="${!_names:-}"
+            export RESEARCHCLAW_API_KEY
+        fi
     else
         # Bare key: first non-empty line is the OpenRouter key
         RESEARCHCLAW_API_KEY="$(grep -m1 -vE '^[[:space:]]*(#|$)' "$SECRETS_FILE" | tr -d '[:space:]')"
@@ -41,6 +51,10 @@ if [ -f "$SECRETS_FILE" ]; then
 elif [ -n "${CLAW_SECRETS_FILE:-}${_cfg_secrets}" ]; then
     echo "⚠️  secrets file not found: $SECRETS_FILE" >&2
 fi
+case "${1:-}" in
+    start-app|restart-app|start-agents|restart-agents|fresh)
+        [ -n "${RESEARCHCLAW_API_KEY:-}" ] || echo "⚠️  no API key found in $SECRETS_FILE; model calls will fail" >&2 ;;
+esac
 
 # Resolve python path: env PYTHON_PATH > config sandbox.python_path > system python3
 _cfg_py=""
