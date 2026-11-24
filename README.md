@@ -188,7 +188,7 @@ chmod 600 ~/.config/claw-ai-lab/secrets.env
 **`config.yaml`** (repo root): set these two things.
 
 ```yaml
-model_profile: eco        # eco | quality | custom — see Model presets below
+model_profile: eco        # eco | quality | custom | original — see Model presets below
 
 experiment:
   sandbox:
@@ -205,7 +205,7 @@ experiment:
 | Fallbacks | `gpt-5.6-luna`, `qwen3.5-plus` | `claude-sonnet-5.5`, `gemini-3.8-flash` |
 | Discussion | `qwen3.5-plus`, `gpt-5.6-luna` | `claude-sonnet-5.5`, `gemini-3.1-pro` |
 
-`custom` is your own mix: edit `model_profiles.custom` in `config.yaml`. It starts as the original defaults (`gpt-5.4`). A preset applies to projects created after you switch.
+`original` is the authors' setup (see [below](#getting-the-authors-original-behaviour)). `custom` is your own mix: edit `model_profiles.custom` in `config.yaml`. It starts as the original defaults (`gpt-5.4`). A preset applies to projects created after you switch.
 
 > In `eco`, prompts go to DeepSeek and Qwen models. Use `quality` or `custom` if that matters for your work.
 
@@ -224,6 +224,25 @@ experiment:
 ```
 
 Open **http://localhost:5903/** → Submit your research topic and let the agents work. New to the interface? See [UI_GUIDE.md](UI_GUIDE.md).
+
+---
+
+### Getting the authors' original behaviour
+
+**Pipeline:** unchanged by default. With every layer on and no stage unticked, the app launches the same commands, in the same order, as the authors' version in Lab·Discuss, Lab·Solo and Reproduce.
+
+**Models:** set `model_profile: original` in `config.yaml` for the authors' provider and model names, and put your endpoint in that preset's `base_url`. Use a key for that provider: whatever key is in your secrets file is sent to that endpoint.
+
+**The untouched original app:** the authors' code is kept on the `preview-v1.1.0` branch. To run it beside this one (stop this one first; both use the same ports):
+
+```bash
+git worktree add ~/Claw-AI-Lab-original preview-v1.1.0   # use origin/preview-v1.1.0 in a fresh clone
+cd ~/Claw-AI-Lab-original/frontend && npm install && cd ..
+# fill in examples/config_template.yaml (endpoint, key, python_path), then:
+./start.sh
+```
+
+Two things to know about the original: its chat box sends your API key to `http://www.longcatcloud.com/v1` (plain HTTP) whatever endpoint you set, and `./start.sh stop` also force-kills programs connected to its ports, such as a browser with the page open. Both are changed in this version.
 
 ---
 
@@ -257,7 +276,7 @@ Every field in `config.yaml` explained. Fields marked **IMPORTANT** are the ones
 
 ```yaml
 # === Models ===
-model_profile: eco                # ⚠️ **IMPORTANT** Active preset: "eco" | "quality" | "custom"
+model_profile: eco                # ⚠️ **IMPORTANT** Active preset: "eco" | "quality" | "custom" | "original"
 model_profiles:                   # Each preset sets primary_model, coding_model, image_model,
   eco: { ... }                    #   fallback_models and discussion_models (OpenRouter IDs)
   quality: { ... }

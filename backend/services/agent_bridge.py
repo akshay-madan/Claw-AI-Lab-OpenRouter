@@ -277,7 +277,7 @@ def _apply_model_profile(content: str, profile: dict) -> str:
     data.pop("agent_pool", None)
     data.pop("disabled_layers", None)
     llm = data.setdefault("llm", {})
-    for key in ("primary_model", "coding_model", "image_model", "fallback_models"):
+    for key in ("provider", "base_url", "primary_model", "coding_model", "image_model", "fallback_models"):
         if profile.get(key):
             llm[key] = profile[key]
     return _yaml.safe_dump(data, sort_keys=False, allow_unicode=True)

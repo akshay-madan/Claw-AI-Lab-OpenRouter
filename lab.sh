@@ -1,6 +1,6 @@
 #!/bin/bash
 # 🦞 Claw AI Lab — start / stop the app
-# Usage: ./lab.sh <command> [eco|quality|custom]
+# Usage: ./lab.sh <command> [eco|quality|custom|original]
 #
 #   start-app       start everything: web page server + agents (agent bridge, resource monitor)
 #   stop-app        stop everything
@@ -13,7 +13,7 @@
 #                   Run stop-app first; otherwise agent_bridge may write files back.
 #   fresh           stop-app → reset-state → start-app (fresh run from scratch)
 #
-#   eco|quality|custom — model preset for this launch (default: `model_profile:` in config.yaml)
+#   eco|quality|custom|original — model preset for this launch (default: `model_profile:` in config.yaml)
 
 BASE="$(cd "$(dirname "$0")" && pwd)"
 FE="$BASE/frontend"

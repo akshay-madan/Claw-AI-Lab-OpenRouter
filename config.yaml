@@ -16,7 +16,7 @@ secrets_file: "~/.latch/openrouter.env"
 # ── Models ───────────────────────────────────────────────────────────
 # OpenRouter IDs (https://openrouter.ai/models). Prices: USD per 1M tokens, input / output (Oct 2026).
 # Override once at launch: ./lab.sh restart-app quality   (launch arg > $MODEL_PROFILE > this line)
-model_profile: eco        # eco | quality | custom
+model_profile: eco        # eco | quality | custom | original
 
 model_profiles:
   # Cheap runs for testing and exploration.
@@ -54,6 +54,22 @@ model_profiles:
     discussion_models:
       - "anthropic/claude-sonnet-4.6"              # $3 / $15
       - "qwen/qwen3.5-plus-20260420"               # $0.30 / $1.80
+
+  # The authors' setup, as in their examples/config_template.yaml (not OpenRouter).
+  # A preset may also set provider / base_url. Put your own endpoint in base_url,
+  # and that provider's key in secrets_file (RESEARCHCLAW_API_KEY) or llm.api_key.
+  original:
+    provider: "openai-compatible"
+    base_url: "your-api-endpoint"                  # e.g. https://api.vectorengine.ai/ or http://www.longcatcloud.com/
+    primary_model: "gpt-5.4"
+    coding_model: "gpt-5.4"
+    image_model: "gemini-3-pro-image-preview"
+    fallback_models:
+      - "qwen3.5-plus"
+      - "qwen-plus"
+    discussion_models:
+      - "claude-sonnet-4-6"
+      - "qwen3.5-plus"
 
 # ── Agents per layer ─────────────────────────────────────────────────
 # Agents each layer starts with. One agent takes one project and runs all of
