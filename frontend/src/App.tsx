@@ -187,72 +187,91 @@ export default function App() {
   // ── Agent Bridge WS ──
   useEffect(() => {
     let ws: WebSocket | null = null;
+    let disposed = false;
     let reconnects = 0;
     let timer: ReturnType<typeof setTimeout>;
 
+    // Events from a replaced or disposed socket are ignored; otherwise its onclose
+    // would reconnect and the page would hold two connections (every event twice)
     function connect() {
-      if (ws) { ws.close(); ws = null; }
+      if (disposed) return;
+      if (ws) { const old = ws; ws = null; old.close(); }
       try {
-        ws = new WebSocket(agentWsUrl);
-        agentWsRef.current = ws;
-        ws.onopen = () => {
+        const sock = new WebSocket(agentWsUrl);
+        ws = sock;
+        agentWsRef.current = sock;
+        sock.onopen = () => {
+          if (disposed || ws !== sock) { sock.close(); return; }
           doStopMock();
           dispatch({ type: 'set_connected', payload: true });
           dispatch({ type: 'set_mock', payload: false });
           reconnects = 0;
           firstListRef.current = true;
-          ws!.send(JSON.stringify({ command: 'list_agents' }));
+          sock.send(JSON.stringify({ command: 'list_agents' }));
         };
-        ws.onmessage = (e) => {
+        sock.onmessage = (e) => {
+          if (disposed || ws !== sock) return;
           try { dispatchMsg(JSON.parse(e.data)); } catch { /* ignore */ }
         };
-        ws.onclose = () => {
+        sock.onclose = () => {
+          if (disposed || ws !== sock) return;
           dispatch({ type: 'set_connected', payload: false });
           reconnects++;
           const delay = Math.min(3000 * Math.pow(1.5, reconnects), 20000);
           timer = setTimeout(connect, delay);
         };
-        ws.onerror = () => ws?.close();
+        sock.onerror = () => sock.close();
       } catch {
         dispatch({ type: 'set_connected', payload: false });
       }
     }
     connect();
     agentReconnectRef.current = () => { clearTimeout(timer); reconnects = 0; connect(); };
-    return () => { clearTimeout(timer); ws?.close(); ws = null; doStopMock(); };
+    return () => { disposed = true; clearTimeout(timer); ws?.close(); ws = null; doStopMock(); };
   }, [agentWsUrl, dispatchMsg, doStopMock, doStartMock]);
 
   // ── Resource Monitor WS ──
   useEffect(() => {
     let ws: WebSocket | null = null;
+    let disposed = false;
     let reconnects = 0;
     let timer: ReturnType<typeof setTimeout>;
 
+    // Events from a replaced or disposed socket are ignored; otherwise its onclose
+    // would reconnect and the page would hold two connections (every event twice)
     function connect() {
-      if (ws) { ws.close(); ws = null; }
+      if (disposed) return;
+      if (ws) { const old = ws; ws = null; old.close(); }
       try {
-        ws = new WebSocket(resWsUrl);
-        resWsRef.current = ws;
-        ws.onopen = () => { dispatch({ type: 'set_res_connected', payload: true }); reconnects = 0; };
-        ws.onmessage = (e) => {
+        const sock = new WebSocket(resWsUrl);
+        ws = sock;
+        resWsRef.current = sock;
+        sock.onopen = () => {
+          if (disposed || ws !== sock) { sock.close(); return; }
+          dispatch({ type: 'set_res_connected', payload: true });
+          reconnects = 0;
+        };
+        sock.onmessage = (e) => {
+          if (disposed || ws !== sock) return;
           try {
             const msg = JSON.parse(e.data) as { type: string; payload: ResourceStats };
             if (msg.type === 'resource_stats') dispatch({ type: 'resource_stats', payload: msg.payload });
           } catch { /* ignore */ }
         };
-        ws.onclose = () => {
+        sock.onclose = () => {
+          if (disposed || ws !== sock) return;
           dispatch({ type: 'set_res_connected', payload: false });
           reconnects++;
           timer = setTimeout(connect, Math.min(2000 * Math.pow(1.5, reconnects), 15000));
         };
-        ws.onerror = () => ws?.close();
+        sock.onerror = () => sock.close();
       } catch {
         dispatch({ type: 'set_res_connected', payload: false });
       }
     }
     connect();
     resReconnectRef.current = () => { clearTimeout(timer); reconnects = 0; connect(); };
-    return () => { clearTimeout(timer); ws?.close(); ws = null; };
+    return () => { disposed = true; clearTimeout(timer); ws?.close(); ws = null; };
   }, [resWsUrl]);
 
   const sendCommand = (payload: Record<string, unknown>) => {
