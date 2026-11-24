@@ -1,0 +1,7 @@
+# Copy to config.local.yaml (git ignores it) and set the values for your machine.
+
+# File holding your API key(s)
+secrets_file: "~/.config/claw-ai-lab/secrets.env"
+
+# Python of the clawailab environment: conda activate clawailab && which python
+python_path: "/absolute/path/to/clawailab/bin/python"

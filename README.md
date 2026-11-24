@@ -183,16 +183,15 @@ chmod 600 ~/.config/claw-ai-lab/secrets.env
 
 `lab.sh` loads this file on every start. Leave `api_key` empty in `config.yaml`.
 
-**Key already in another file?** Point `secrets_file:` in `config.yaml` at it. The file can hold `KEY=value` lines, or just the OpenRouter key on its own line.
+**Key already in another file?** Point `secrets_file:` in `config.local.yaml` at it. The file can hold `KEY=value` lines, or just the OpenRouter key on its own line.
 
-**`config.yaml`** (repo root): set these two things.
+**This machine:** copy `config.local.example.yaml` to `config.local.yaml` (git ignores it) and set `python_path` and, if your key is somewhere else, `secrets_file`.
+
+**`config.yaml`** (repo root): shared settings.
 
 ```yaml
 model_profile: eco        # eco | quality | custom | original — see Model presets below
-
-experiment:
-  sandbox:
-    python_path: "/absolute/path/to/clawailab/bin/python"  # run: conda activate clawailab && which python
+spend_limit_usd: 2        # agents stop at 85% of this; 0 = no limit (OpenRouter only)
 ```
 
 **Model presets** (OpenRouter IDs; prices are USD per 1M tokens, input / output):
@@ -350,7 +349,7 @@ experiment:
   shared_results_dir: ""          # Directory for cross-project shared results
   paper_length: "long"            # Paper length: "short" (~4 pages) | "long" (~8 pages)
   sandbox:
-    python_path: "/path/to/python3"  # ⚠️ **IMPORTANT** Python interpreter for running experiments
+    python_path: ""               # Leave empty — set python_path in config.local.yaml
   sanity_check_max_iterations: 100   # Max fix attempts in S12 code testing
 
 # === Prompts ===

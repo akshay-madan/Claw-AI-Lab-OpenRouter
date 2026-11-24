@@ -67,3 +67,4 @@ homepage/
 .env
 .env.*
 secrets.env
+config.local.yaml

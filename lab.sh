@@ -22,8 +22,10 @@ PIDF="$BASE/.pids"
 RUNTIME_PORTS="$BASE/.runtime_ports"
 
 # Load API keys from a private file outside the repo.
-# Path: $CLAW_SECRETS_FILE > `secrets_file:` in config.yaml > ~/.config/claw-ai-lab/secrets.env
-_cfg_secrets="$(sed -n 's/^secrets_file:[[:space:]]*"\{0,1\}\([^"#]*[^"#[:space:]]\)"\{0,1\}.*/\1/p' "$BASE/config.yaml" 2>/dev/null)"
+# Path: $CLAW_SECRETS_FILE > `secrets_file:` in config.local.yaml > config.yaml > ~/.config/claw-ai-lab/secrets.env
+_read_secrets() { sed -n 's/^secrets_file:[[:space:]]*"\{0,1\}\([^"#]*[^"#[:space:]]\)"\{0,1\}.*/\1/p' "$1" 2>/dev/null | head -1; }
+_cfg_secrets="$(_read_secrets "$BASE/config.local.yaml")"
+[ -n "$_cfg_secrets" ] || _cfg_secrets="$(_read_secrets "$BASE/config.yaml")"
 SECRETS_FILE="${CLAW_SECRETS_FILE:-${_cfg_secrets:-$HOME/.config/claw-ai-lab/secrets.env}}"
 case "$SECRETS_FILE" in "~/"*) SECRETS_FILE="$HOME/${SECRETS_FILE#\~/}" ;; esac
 if [ -f "$SECRETS_FILE" ]; then
@@ -59,9 +61,9 @@ case "${1:-}" in
         [ -n "${RESEARCHCLAW_API_KEY:-}" ] || echo "⚠️  no API key found in $SECRETS_FILE; model calls will fail" >&2 ;;
 esac
 
-# Resolve python path: env PYTHON_PATH > config sandbox.python_path > system python3
+# Resolve python path: env PYTHON_PATH > config.local.yaml > config sandbox.python_path > system python3
 _cfg_py=""
-for _cfg in "$BASE/config.yaml" "$BASE"/backend/runs/project_configs/*.yaml; do
+for _cfg in "$BASE/config.local.yaml" "$BASE/config.yaml" "$BASE"/backend/runs/project_configs/*.yaml; do
     [ -f "$_cfg" ] || continue
     _cfg_py=$(grep 'python_path:' "$_cfg" 2>/dev/null | head -1 | sed 's/.*python_path:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}/\1/' | tr -d '[:space:]')
     [ -n "$_cfg_py" ] && [ -x "$_cfg_py" ] && break

@@ -1,7 +1,8 @@
 # ════════════════════════════════════════════════════════════════════
 #  Claw AI Lab — configuration
 #  • Models: pick a preset below.   • Pipeline: settings further down.
-#  • API keys: NOT here — in the file named by secrets_file below
+#  • API keys: NOT here — in the file named by secrets_file
+#  • This machine only (secrets_file, python_path): config.local.yaml, which git ignores
 #  • __PLACEHOLDERS__ are filled in per project by the app; leave them.
 #  Changes apply to NEW projects after: ./lab.sh restart-app
 # ════════════════════════════════════════════════════════════════════
@@ -11,9 +12,7 @@
 #   • KEY=value lines: RESEARCHCLAW_API_KEY=..., RESEARCHCLAW_IMAGE_API_KEY=..., EXA_API_KEY=..., TAVILY_API_KEY=...
 #   • just the OpenRouter key on its own line
 # The $CLAW_SECRETS_FILE environment variable overrides this.
-secrets_file: "~/.latch/openrouter.env"
-
-# ── Models ───────────────────────────────────────────────────────────
+secrets_file: "~/.config/claw-ai-lab/secrets.env"   # set yours in config.local.yaml
 # OpenRouter IDs (https://openrouter.ai/models). Prices: USD per 1M tokens, input / output (Oct 2026).
 # Override once at launch: ./lab.sh restart-app quality   (launch arg > $MODEL_PROFILE > this line)
 model_profile: eco        # eco | quality | custom | original
@@ -23,6 +22,7 @@ model_profiles:
   eco:
     primary_model: "deepseek/deepseek-v4-pro"      # $0.21 / $0.42   strong open MoE, ~25x cheaper than gpt-5.6-sol
     coding_model: "google/gemini-3.8-flash"        # $0.75 / $3.75   best coding per $ among cheap models
+    reasoning_effort: low                          # less thinking: faster, cheaper (low | medium | high)
     image_model: "google/gemini-3.1-flash-image"   # $0.50 / $3      Nano Banana 2, near-Pro quality
     fallback_models:
       - "openai/gpt-5.6-luna"                      # $0.20 / $1.20
@@ -70,6 +70,12 @@ model_profiles:
     discussion_models:
       - "claude-sonnet-4-6"
       - "qwen3.5-plus"
+
+# ── Spending limit ───────────────────────────────────────────────────
+# USD. Agents stop at 85% of this (OpenRouter reports spend a little late); 0 = no limit.
+# Counts from when it is first used; delete backend/runs/spend.json to start counting again.
+# OpenRouter only: with another provider and a limit set, nothing runs.
+spend_limit_usd: 2
 
 # ── Agents per layer ─────────────────────────────────────────────────
 # Agents each layer starts with. One agent takes one project and runs all of
@@ -141,8 +147,9 @@ experiment:
   codebases_dir: ""
   shared_results_dir: "runs/shared_results"
   paper_length: "long"
+  auto_install_torch: false   # true = S1 installs PyTorch by itself when it finds a GPU (authors' default)
   sandbox:
-    python_path: "/Users/akshay/miniconda3/envs/clawailab/bin/python"
+    python_path: ""   # set yours in config.local.yaml
   sanity_check_max_iterations: 100
 
 runtime:

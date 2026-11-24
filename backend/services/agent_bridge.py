@@ -238,6 +238,19 @@ _INTENT_SYSTEM_PROMPT = (
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
 
 
+def _read_local_config() -> dict:
+    """config.local.yaml: settings for this machine (git ignores it)."""
+    try:
+        import yaml as _yaml
+        with open(CONFIG_PATH.with_name("config.local.yaml"), encoding="utf-8") as f:
+            return _yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        print(f"[config] Cannot read config.local.yaml: {exc}")
+        return {}
+
+
 def _read_root_config() -> dict:
     try:
         import yaml as _yaml
@@ -281,6 +294,8 @@ def _apply_model_profile(content: str, profile: dict) -> str:
     data.pop("agent_pool", None)
     data.pop("spend_limit_usd", None)
     data.pop("disabled_layers", None)
+    sandbox = data.setdefault("experiment", {}).setdefault("sandbox", {})
+    sandbox["python_path"] = _read_local_config().get("python_path") or sandbox.get("python_path") or sys.executable
     llm = data.setdefault("llm", {})
     for key in ("provider", "base_url", "primary_model", "coding_model", "image_model", "fallback_models",
                 "reasoning_effort"):
