@@ -71,6 +71,17 @@ const en: Record<string, string> = {
 
   // LayerPanel
   'layer.active': 'active',
+  'cost.header_title': 'Spent on model calls, as reported by OpenRouter (a little late). The limit is spend_limit_usd in config.yaml.',
+  'cost.blocked': 'limit reached',
+  'cost.layer_title': 'Spent in this layer, all projects',
+  'cost.project_title': 'Spent on this project, by layer',
+  'models.label': 'Models',
+  'models.default': 'default',
+  'models.hint': 'Model preset for this project (defined in config.yaml)',
+  'models.locked_hint': 'Fixed when the project was submitted',
+  'models.mode.discuss': 'Lab·Discuss',
+  'models.mode.solo': 'Lab·Solo',
+  'models.mode.reproduce': 'Reproduce',
   'layer.agent_status.idle': 'Idle',
   'layer.agent_status.working': 'Working',
   'layer.agent_status.error': 'Error',

@@ -254,11 +254,15 @@ def _model_profile_name() -> str:
             or str(_read_root_config().get("model_profile") or "").strip())
 
 
-def _load_model_profile() -> dict:
-    """Return the active preset from config.yaml's model_profiles ({} if none)."""
+def _model_profile_names() -> list[str]:
+    return list((_read_root_config().get("model_profiles") or {}).keys())
+
+
+def _load_model_profile(name: str = "") -> dict:
+    """Return a preset from config.yaml's model_profiles (default: the active one; {} if none)."""
     cfg = _read_root_config()
     profiles = cfg.get("model_profiles") or {}
-    name = _model_profile_name()
+    name = name or _model_profile_name()
     profile = profiles.get(name)
     if not isinstance(profile, dict):
         fallback = str(cfg.get("model_profile") or "eco")
@@ -872,6 +876,7 @@ class BridgeState:
     idea_factory_remaining: int = 0  # 0=disabled, -1=infinite, N=count
     idea_factory_produced: int = 0
     _fail_counts: dict[str, int] = field(default_factory=dict)  # project_id → consecutive fail count
+    spend_used: float | None = None  # what OpenRouter reports for the key (with a limit set)
     spend_blocked: bool = False  # True while spend_limit_usd is reached or cannot be checked
     # Lab mode: track which sub-projects belong to the same batch
     lab_batches: dict[str, list[str]] = field(default_factory=dict)  # base_id → [sub_project_ids]
@@ -1248,10 +1253,15 @@ def _passthrough_agent(agent: LobsterAgent) -> list[dict]:
     return messages
 
 
-def _uses_discussion(state: BridgeState, layer: str, is_reproduce: bool, skip: set[int]) -> bool:
-    """L1 splits into S1–S7 → discussion → S8, unless reproduce mode or S1–S7 are all skipped."""
+def _uses_discussion(state: BridgeState, layer: str, is_reproduce: bool, skip: set[int], project_id: str = "") -> bool:
+    """L1 splits into S1–S7 → discussion → S8, unless reproduce mode or S1–S7 are all skipped.
+
+    Discuss/Solo is the project's own choice, saved when it was submitted.
+    """
+    meta = _read_json(state.projects_dir() / project_id / "project_meta.json") if project_id else None
+    discussion = (meta or {}).get("discussion", state.discussion_mode)
     return (
-        state.discussion_mode and layer == "idea" and not is_reproduce
+        discussion and layer == "idea" and not is_reproduce
         and not all(s in skip for s in range(1, 8))
     )
 
@@ -1278,7 +1288,7 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
     for s in skip:
         if s in agent.stage_progress:
             agent.stage_progress[s] = "skipped"
-    if _uses_discussion(state, agent.layer, _is_reproduce, skip):
+    if _uses_discussion(state, agent.layer, _is_reproduce, skip, task.project_id):
         layer_range = LAYER_RANGE_PHASE1["idea"]
     else:
         layer_range = LAYER_RANGE.get(agent.layer, (1, 15))
@@ -1291,7 +1301,7 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
         resume_stage = last_done + 1
 
         # Discussion mode: if S1-S7 already done, skip straight to discussion/S8
-        if _uses_discussion(state, agent.layer, _is_reproduce, skip) and last_done >= ts:
+        if _uses_discussion(state, agent.layer, _is_reproduce, skip, task.project_id) and last_done >= ts:
             for s in range(fs, ts + 1):
                 if agent.stage_progress.get(s) != "skipped":
                     agent.stage_progress[s] = "completed"
@@ -1331,7 +1341,7 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
         cmd.extend(["--topic", task.topic])
 
     try:
-        proc_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        proc_env = _run_env(state, task.project_id, agent.layer)
         proc_env.pop("CUDA_VISIBLE_DEVICES", None)
 
         log_path = Path(task.run_dir) / f"agent_{agent.id}.log"
@@ -1354,6 +1364,19 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
         messages.append(msg_log(agent, f"Launch failed: {e}", "error"))
 
     return messages
+
+
+def _cost_log(state: BridgeState) -> Path:
+    return Path(state.runs_base_dir) / "costs.jsonl"
+
+
+def _run_env(state: BridgeState, project_id: str, layer: str, stage: int = 0) -> dict[str, str]:
+    """Environment for a pipeline process; its model calls are logged for spend per layer."""
+    return {
+        **os.environ, "PYTHONUNBUFFERED": "1",
+        "RC_COST_LOG": str(_cost_log(state)), "RC_COST_PROJECT": project_id,
+        "RC_COST_LAYER": layer, "RC_COST_STAGE": str(stage),
+    }
 
 
 def _terminate_tree(proc: subprocess.Popen) -> None:
@@ -1464,8 +1487,8 @@ def _layer_fully_skipped(layer: str, skip: set[int]) -> bool:
 
 def _skip_args(skip: set[int], fs: int, ts: int) -> list[str]:
     """`--skip-stages` arguments for the stages of fs..ts that this project skips."""
-    in_range = [s for s in sorted(skip) if fs <= s <= ts]
-    return ["--skip-stages", ",".join(str(s) for s in in_range)] if in_range else []
+    upto = [s for s in sorted(skip) if s <= ts]  # earlier ones too: their files are missing on purpose
+    return ["--skip-stages", ",".join(str(s) for s in upto)] if upto else []
 
 
 def _advance_checkpoint(run_dir: str, stage: int) -> None:
@@ -1536,7 +1559,11 @@ def _push_task(state: "BridgeState", queue_name: str, task: "Task") -> list[dict
 
 
 def msg_layer_settings(state: "BridgeState") -> dict:
-    return {"type": "layer_settings", "payload": {"disabledLayers": sorted(state.disabled_layers)}}
+    return {"type": "layer_settings", "payload": {
+        "disabledLayers": sorted(state.disabled_layers),
+        "modelProfiles": _model_profile_names(),
+        "activeProfile": _model_profile_name(),
+    }}
 
 
 def _determine_resume_target(run_dir: str) -> tuple[str, int] | None:
@@ -1579,7 +1606,7 @@ def submit_new_project(
     os.makedirs(run_dir, exist_ok=True)
     _save_project_meta(run_dir, project_id, config_path, topic, mode=mode, extra=meta_extra)
 
-    if state.discussion_mode:
+    if state.discussion_mode and mode != "reproduce":
         messages.append(msg_log(
             sys_agent,
             f"New project [{project_id}] in cross-project discussion mode: assigned 1 agent; it will discuss with other projects' agents after S7",
@@ -1697,7 +1724,7 @@ def on_agent_done(state: BridgeState, agent: LobsterAgent) -> list[dict]:
     _agent_proj_dir = state.projects_dir() / agent.project_id if agent.project_id else None
     _agent_meta = _read_project_meta(str(_agent_proj_dir)) if _agent_proj_dir and _agent_proj_dir.exists() else None
     _agent_is_reproduce = _agent_meta.get("mode") == "reproduce" if _agent_meta else False
-    if _uses_discussion(state, agent.layer, _agent_is_reproduce, _project_skip_stages(state, agent.project_id)):
+    if _uses_discussion(state, agent.layer, _agent_is_reproduce, _project_skip_stages(state, agent.project_id), agent.project_id):
         state.discussion_waiting[agent.id] = agent
         agent.current_stage = DISCUSSION_STAGE
         agent.stage_progress[DISCUSSION_STAGE] = "running"
@@ -1952,6 +1979,9 @@ def list_all_projects(state: BridgeState) -> list[dict]:
             "completedStages": completed_stages,
             "skippedStages": skipped,
             "startLayer": (meta or {}).get("start_layer", "idea"),
+            "modelProfile": (meta or {}).get("model_profile", ""),
+            "mode": ("reproduce" if project_mode == "reproduce"
+                     else "discuss" if (meta or {}).get("discussion", True) else "solo"),
             "timestamp": timestamp,
             "topic": topic,
             "configPath": config_path,
@@ -2075,6 +2105,7 @@ def _generate_config_from_template(
     state: BridgeState, project_id: str, topic: str, role_prompt: str = "",
     reference_papers: list[str] | None = None,
     codebases_dir: str = "", datasets_dir: str = "", checkpoints_dir: str = "",
+    model_profile: str = "",
 ) -> str:
     """Generate a project-specific YAML config from the default template.
 
@@ -2107,7 +2138,7 @@ def _generate_config_from_template(
     if checkpoints_dir:
         content = _re.sub(r'(checkpoints_dir:\s*)"[^"]*"', f'\\1"{checkpoints_dir}"', content)
 
-    content = _apply_model_profile(content, _load_model_profile())
+    content = _apply_model_profile(content, _load_model_profile(model_profile))
 
     configs_dir = Path(state.runs_base_dir) / "project_configs"
     configs_dir.mkdir(parents=True, exist_ok=True)
@@ -2216,8 +2247,13 @@ def quick_submit_project(
     skip_stages: list[int] | None = None,
     start_layer: str = "",
     start_inputs: dict[str, str] | None = None,
+    model_profile: str = "",
+    discussion: bool | None = None,
 ) -> list[dict]:
     """Create a project from a topic string.
+
+    The stages, layers, model preset and Discuss/Solo choice are saved with the
+    project, so changing them later only affects new projects.
 
     skip_stages / start_layer / switched-off layers are merged into the project's
     `skip_stages` (saved in project_meta.json). start_inputs (filename → text) are
@@ -2235,6 +2271,17 @@ def quick_submit_project(
         messages.append(msg_log(sys_agent, "Please enter a research topic", "error"))
         return messages
 
+    if model_profile not in _model_profile_names():
+        model_profile = _model_profile_name()
+    _provider = (_load_model_profile(model_profile).get("provider")
+                 or (_read_root_config().get("llm") or {}).get("provider"))
+    if _spend_limit() > 0 and _provider != "openrouter":
+        messages.append(msg_log(
+            sys_agent,
+            f"Not started: spend_limit_usd can't be checked for the '{model_profile}' preset "
+            "(not OpenRouter). Set it to 0 in config.yaml to use this preset.", "error"))
+        return messages
+
     base_id = project_id or _slugify(topic)
 
     if start_layer not in LAYER_ORDER:
@@ -2250,6 +2297,8 @@ def quick_submit_project(
         "skip_stages": skip,
         "start_layer": start_layer,
         "disabled_layers": sorted(state.disabled_layers),
+        "model_profile": model_profile,
+        "discussion": (state.discussion_mode if discussion is None else discussion) and mode != "reproduce",
     }
     if inputs:
         meta_extra["start_inputs"] = inputs
@@ -2281,6 +2330,7 @@ def quick_submit_project(
                 codebases_dir=_po.get("codebases_dir", ""),
                 datasets_dir=_po.get("datasets_dir", ""),
                 checkpoints_dir=_po.get("checkpoints_dir", ""),
+                model_profile=model_profile,
             )
         except Exception as e:
             messages.append(msg_log(sys_agent, f"Config generation failed: {e}", "error"))
@@ -2324,6 +2374,7 @@ def quick_submit_project(
             codebases_dir=_po.get("codebases_dir", ""),
             datasets_dir=_po.get("datasets_dir", ""),
             checkpoints_dir=_po.get("checkpoints_dir", ""),
+            model_profile=model_profile,
         )
     except Exception as e:
         messages.append(msg_log(sys_agent, f"Config generation failed: {e}", "error"))
@@ -2363,6 +2414,7 @@ def quick_submit_project(
                 codebases_dir=_po.get("codebases_dir", ""),
                 datasets_dir=_po.get("datasets_dir", ""),
                 checkpoints_dir=_po.get("checkpoints_dir", ""),
+                model_profile=model_profile,
             )
         except Exception as e:
             messages.append(msg_log(sys_agent, f"Config generation failed [{name}]: {e}", "error"))
@@ -2397,7 +2449,7 @@ def quick_submit_project(
         messages.append(msg_log(
             sys_agent,
             f"After S7, the {task_count} direction agents will discuss automatically → merge into one hypothesis → move to L2"
-            if state.discussion_mode else
+            if meta_extra["discussion"] else
             f"{task_count} direction(s) will run independently, each with its own hypotheses (no discussion)",
             "success",
         ))
@@ -2478,7 +2530,7 @@ def _launch_idea_factory_run(state: BridgeState, agent: LobsterAgent, s7_only: b
         proc = subprocess.Popen(
             cmd, cwd=state.agent_package_dir,
             stdout=log_file, stderr=subprocess.STDOUT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            env=_run_env(state, agent.project_id or "", "idea"),
         )
         agent.process = proc
         n = state.idea_factory_produced + 1
@@ -2647,7 +2699,7 @@ def _trigger_discussion(state: BridgeState, group: DiscussionGroup) -> list[dict
         proc = subprocess.Popen(
             cmd, cwd=state.agent_package_dir,
             stdout=log_file, stderr=subprocess.STDOUT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            env=_run_env(state, group.project_id, "idea", 100),
         )
         group.discussion_process = proc
         sys_agent = LobsterAgent(id="system", name="System", layer="idea", run_id="", run_dir="", config_path="")
@@ -2720,7 +2772,7 @@ def _trigger_cross_project_discussion(
         proc = subprocess.Popen(
             cmd, cwd=state.agent_package_dir,
             stdout=log_file, stderr=subprocess.STDOUT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            env=_run_env(state, agent1.project_id, "idea", 100),
         )
         group.discussion_process = proc
         state.discussion_groups[disc_name] = group
@@ -2778,7 +2830,7 @@ def _skip_discussion_proceed_s8(state: BridgeState, agent: LobsterAgent) -> list
         proc = subprocess.Popen(
             cmd, cwd=state.agent_package_dir,
             stdout=log_file, stderr=subprocess.STDOUT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            env=_run_env(state, agent.project_id or "", "idea", 8),
         )
         agent.process = proc
         agent._is_discussion_s8 = True  # type: ignore[attr-defined]
@@ -2951,7 +3003,7 @@ def _launch_s8_for_agent(state: BridgeState, agent: LobsterAgent, group: Discuss
         proc = subprocess.Popen(
             cmd, cwd=state.agent_package_dir,
             stdout=log_file, stderr=subprocess.STDOUT,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            env=_run_env(state, agent.project_id or "", "idea", 8),
         )
         agent.process = proc
         agent._is_discussion_s8 = True  # type: ignore[attr-defined]
@@ -3167,7 +3219,7 @@ async def broadcast(state: BridgeState, messages: list[dict]):
     dead = set()
     for msg in messages:
         data = json.dumps(msg, ensure_ascii=False)
-        for ws in state.clients:
+        for ws in list(state.clients):  # may change while sending
             try:
                 await ws.send(data)
             except websockets.ConnectionClosed:
@@ -3277,6 +3329,8 @@ async def handle_command(state: BridgeState, data: dict) -> list[dict]:
             skip_stages=skip_stages if isinstance(skip_stages, list) else None,
             start_layer=start_layer if isinstance(start_layer, str) else "",
             start_inputs=start_inputs if isinstance(start_inputs, dict) else None,
+            model_profile=str(data.get("modelProfile") or ""),
+            discussion=data.get("discussion") if isinstance(data.get("discussion"), bool) else None,
         ))
         messages.extend(schedule_idle_agents(state))
         messages.append(msg_project_list(list_all_projects(state)))
@@ -3467,6 +3521,7 @@ async def ws_handler(state: BridgeState, websocket: websockets.ServerConnection)
     try:
         await websocket.send(json.dumps(msg_queue_update(state.queues), ensure_ascii=False))
         await websocket.send(json.dumps(msg_layer_settings(state), ensure_ascii=False))
+        await websocket.send(json.dumps(msg_cost_update(state), ensure_ascii=False))
     except websockets.ConnectionClosed:
         pass
 
@@ -3539,6 +3594,53 @@ def _stop_for_spend(state: BridgeState, reason: str) -> list[dict]:
     return messages
 
 
+def _cost_summary(state: BridgeState) -> dict:
+    """Spend per layer, project and stage, from the cost log."""
+    layers: dict[str, float] = {}
+    projects: dict[str, dict] = {}
+    total = 0.0
+    try:
+        lines = _cost_log(state).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            e = json.loads(line)
+            cost = float(e.get("cost") or 0)
+        except (ValueError, TypeError, AttributeError):
+            continue
+        layer = e.get("layer") or "other"
+        total += cost
+        layers[layer] = layers.get(layer, 0.0) + cost
+        if e.get("project"):
+            p = projects.setdefault(e["project"], {"total": 0.0, "layers": {}, "stages": {}})
+            p["total"] += cost
+            p["layers"][layer] = p["layers"].get(layer, 0.0) + cost
+            s = str(e.get("stage") or 0)
+            p["stages"][s] = p["stages"].get(s, 0.0) + cost
+    return {"total": total, "layers": layers, "projects": projects,
+            "used": state.spend_used, "limit": _spend_limit(), "blocked": state.spend_blocked}
+
+
+def msg_cost_update(state: BridgeState) -> dict:
+    return {"type": "cost_update", "payload": _cost_summary(state)}
+
+
+async def cost_loop(state: BridgeState, interval: float = 5.0):
+    """Send spend per layer to the page whenever it changes."""
+    last = ""
+    while True:
+        try:
+            msg = await asyncio.to_thread(msg_cost_update, state)
+            now = json.dumps(msg, sort_keys=True)
+            if now != last:
+                last = now
+                await broadcast(state, [msg])
+        except Exception as exc:
+            print(f"[cost] {exc}")
+        await asyncio.sleep(interval)
+
+
 async def spend_loop(state: BridgeState, interval: float = 20.0):
     """Enforce spend_limit_usd. Stops at 85% of it, because OpenRouter reports spend late."""
     failures = 0
@@ -3551,6 +3653,7 @@ async def spend_loop(state: BridgeState, interval: float = 20.0):
         else:
             try:
                 used = await asyncio.to_thread(_spend_used, state)
+                state.spend_used = used
                 failures = 0
                 reason = (f"spending limit reached (${used:.2f} of ${limit:.2f}). "
                           "Raise spend_limit_usd in config.yaml to continue.") if used >= 0.85 * limit else ""
@@ -3836,7 +3939,9 @@ async def main(args: argparse.Namespace):
         max_size=64 * 1024 * 1024,
     ):
         state.spend_blocked = _spend_limit() > 0  # nothing starts until the first check passes
+        os.environ.update({"RC_COST_LOG": str(_cost_log(state)), "RC_COST_LAYER": "chat"})  # chat box calls
         _spend_task = asyncio.create_task(spend_loop(state))
+        _cost_task = asyncio.create_task(cost_loop(state))
         await poll_loop(state, args.interval)
 
 

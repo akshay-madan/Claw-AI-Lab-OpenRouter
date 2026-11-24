@@ -71,6 +71,17 @@ const zh: Record<string, string> = {
 
   // LayerPanel
   'layer.active': '活跃',
+  'cost.header_title': '模型调用花费（OpenRouter 上报，略有延迟）。上限为 config.yaml 中的 spend_limit_usd。',
+  'cost.blocked': '已达上限',
+  'cost.layer_title': '该层在所有项目上的花费',
+  'cost.project_title': '该项目的花费（按层）',
+  'models.label': '模型',
+  'models.default': '默认',
+  'models.hint': '该项目使用的模型预设（在 config.yaml 中定义）',
+  'models.locked_hint': '提交项目时已固定',
+  'models.mode.discuss': 'Lab·讨论',
+  'models.mode.solo': 'Lab·独立',
+  'models.mode.reproduce': '复现',
   'layer.agent_status.idle': '空闲',
   'layer.agent_status.working': '工作中',
   'layer.agent_status.error': '异常',

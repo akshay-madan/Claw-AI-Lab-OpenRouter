@@ -16,6 +16,8 @@ interface Props {
   /** Layer switched off for new projects */
   disabled?: boolean;
   disabledLayers?: AgentLayer[];
+  /** USD spent in this layer, all projects */
+  cost?: number;
   onToggleLayer?: (layer: AgentLayer, enabled: boolean) => void;
 }
 
@@ -29,7 +31,7 @@ const STAGE_ST: Record<string, string> = {
 };
 const DISCUSSION_STAGE = 100;
 
-export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId, connected, onAddAgent, onRemoveAgent, disabled, disabledLayers, onToggleLayer }: Props) {
+export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId, connected, onAddAgent, onRemoveAgent, disabled, disabledLayers, cost, onToggleLayer }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { t, locale } = useLocale();
   const meta = LAYER_META[layer];
@@ -62,6 +64,9 @@ export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId
           <span className="layer-agent-count">
             {agents.length} 🦞 · {workingCount} {t('layer.active')}
           </span>
+          {cost !== undefined && cost > 0 && (
+            <span className="layer-agent-count" title={t('cost.layer_title')}>${cost.toFixed(cost < 0.1 ? 3 : 2)}</span>
+          )}
           {disabled && <span className="layer-off-badge" title={t('layer.off_hint')}>⏭ {t('layer.off')}</span>}
           {offWarnings.length > 0 && (
             <span className="layer-off-warning" title={`${t('layer.off_warning')}\n${offWarningText}`}>⚠</span>

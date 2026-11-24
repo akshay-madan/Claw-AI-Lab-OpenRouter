@@ -341,6 +341,20 @@ export interface ProjectInfo {
   /** Stages this project skips (unticked, switched-off layers, before start layer). */
   skippedStages?: number[];
   startLayer?: AgentLayer;
+  /** Fixed when the project was submitted. */
+  modelProfile?: string;
+  mode?: 'discuss' | 'solo' | 'reproduce';
+}
+
+/** Spend from the cost log, in USD. */
+export interface CostSummary {
+  total: number;
+  layers: Record<string, number>;
+  projects: Record<string, { total: number; layers: Record<string, number>; stages: Record<string, number> }>;
+  /** What OpenRouter reports for the key (null when no limit is set). */
+  used: number | null;
+  limit: number;
+  blocked: boolean;
 }
 
 /** Per-project pipeline choices sent with quick_submit. */
@@ -348,6 +362,7 @@ export interface PipelineOptions {
   skipStages: number[];
   startLayer: AgentLayer;
   startInputs: Record<string, string>;
+  modelProfile: string;
 }
 
 // ===================== WebSocket Protocol =====================
@@ -362,7 +377,8 @@ export type WSMessage =
   | { type: 'queue_update'; payload: QueueMap }
   | { type: 'chat_message'; payload: ChatMessage }
   | { type: 'project_list'; payload: ProjectInfo[] }
-  | { type: 'layer_settings'; payload: { disabledLayers: AgentLayer[] } }
+  | { type: 'layer_settings'; payload: { disabledLayers: AgentLayer[]; modelProfiles?: string[]; activeProfile?: string } }
+  | { type: 'cost_update'; payload: CostSummary }
   | { type: 'system'; payload: { message: string } };
 
 // ===================== App State =====================
@@ -381,4 +397,7 @@ export interface AppState {
   mockMode: boolean;
   /** Layers switched off for new projects. */
   disabledLayers: AgentLayer[];
+  modelProfiles: string[];
+  activeProfile: string;
+  costs: CostSummary | null;
 }

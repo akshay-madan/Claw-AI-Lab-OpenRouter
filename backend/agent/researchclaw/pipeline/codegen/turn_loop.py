@@ -523,6 +523,7 @@ class ClawTurnLoop:
             body[_tok_key] = 16384
         elif "openrouter.ai" in cfg.base_url:  # max_tokens includes thinking here
             body[_tok_key] = 16384
+            body["usage"] = {"include": True}
             if getattr(cfg, "reasoning_effort", ""):
                 body["reasoning"] = {"effort": cfg.reasoning_effort}
 
@@ -538,6 +539,8 @@ class ClawTurnLoop:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
 
+        from researchclaw.llm import cost
+        cost.record(data.get("model") or model, data.get("usage"))
         return data
 
     def _parse_response(

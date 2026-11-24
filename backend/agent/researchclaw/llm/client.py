@@ -421,6 +421,7 @@ class LLMClient:
             if on_openrouter:
                 # max_tokens includes thinking here: leave reasoning models room to answer
                 body["max_tokens"] = max(max_tokens, 32768) if max_tokens >= 256 else max_tokens
+                body["usage"] = {"include": True}  # adds the call's cost to the reply
                 if self.config.reasoning_effort:
                     body["reasoning"] = {"effort": self.config.reasoning_effort}
             elif any(model.startswith(prefix) for prefix in _NEW_PARAM_MODELS):
@@ -497,6 +498,9 @@ class LLMClient:
                     data = self._stream_read(fallback_req, self.config.timeout_sec)
                 else:
                     raise
+
+        from researchclaw.llm import cost
+        cost.record(data.get("model") or model, data.get("usage"))
 
         # Handle API error responses
         if "error" in data:

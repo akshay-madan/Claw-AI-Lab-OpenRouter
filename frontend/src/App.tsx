@@ -99,7 +99,14 @@ function reducer(state: AppState, action: Action): AppState {
     case 'project_list':
       return { ...state, projects: action.payload };
     case 'layer_settings':
-      return { ...state, disabledLayers: action.payload.disabledLayers || [] };
+      return {
+        ...state,
+        disabledLayers: action.payload.disabledLayers || [],
+        modelProfiles: action.payload.modelProfiles || state.modelProfiles,
+        activeProfile: action.payload.activeProfile || state.activeProfile,
+      };
+    case 'cost_update':
+      return { ...state, costs: action.payload };
     case 'select_project':
       return { ...state, selectedProjectId: action.payload };
     case 'set_mock':
@@ -115,6 +122,8 @@ function reducer(state: AppState, action: Action): AppState {
 
 const WS_PROTO = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
+const usd = (v: number) => `$${v.toFixed(2)}`;
+
 const INITIAL_STATE: AppState = {
   agents: [],
   artifacts: [],
@@ -128,6 +137,9 @@ const INITIAL_STATE: AppState = {
   connected: false,
   mockMode: false,
   disabledLayers: [],
+  modelProfiles: [],
+  activeProfile: '',
+  costs: null,
 };
 
 export default function App() {
@@ -381,6 +393,13 @@ export default function App() {
           <span className="stat">{t('header.stat_active')} <b>{workingCount}</b></span>
           <span className="stat">{t('header.stat_error')} <b>{errorCount}</b></span>
           <span className="stat" dangerouslySetInnerHTML={{ __html: t('header.stat_artifacts', { n: `<b>${state.artifacts.length}</b>` }) }} />
+          {state.costs && (
+            <span className={`stat${state.costs.blocked ? ' stat-over-limit' : ''}`} title={t('cost.header_title')}>
+              💰 <b>{usd(state.costs.used ?? state.costs.total)}</b>
+              {state.costs.limit > 0 && <> / {usd(state.costs.limit)}</>}
+              {state.costs.blocked && <> · {t('cost.blocked')}</>}
+            </span>
+          )}
         </div>
         <div className="header-right">
           <span
@@ -434,6 +453,9 @@ export default function App() {
             artifactsByProject={artifactsByProject}
             discussionMode={discussionMode}
             disabledLayers={state.disabledLayers}
+            modelProfiles={state.modelProfiles}
+            activeProfile={state.activeProfile}
+            costs={state.costs}
             onToggleDiscussion={toggleDiscussionMode}
             onSelect={(projectId) => dispatch({ type: 'select_project', payload: projectId })}
             onResume={(projectId) => {
@@ -478,6 +500,8 @@ export default function App() {
                   checkpointsDir: paths?.checkpoints || undefined,
                   skipStages: pipeline.skipStages.length > 0 ? pipeline.skipStages : undefined,
                   startLayer: pipeline.startLayer !== 'idea' ? pipeline.startLayer : undefined,
+                  modelProfile: pipeline.modelProfile || undefined,
+                  discussion: discussionMode,
                   startInputs: Object.keys(pipeline.startInputs).length > 0 ? pipeline.startInputs : undefined,
                 }));
               }
@@ -504,6 +528,7 @@ export default function App() {
                       onRemoveAgent={(id) => sendCommand({ command: 'remove_lobster', agentId: id })}
                       disabled={state.disabledLayers.includes(layer)}
                       disabledLayers={state.disabledLayers}
+                      cost={state.costs?.layers[layer]}
                       onToggleLayer={(l, enabled) => sendCommand({ command: 'set_layer_enabled', layer: l, enabled })}
                     />
                     {idx < ALL_LAYERS.length - 1 && (

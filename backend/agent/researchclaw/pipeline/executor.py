@@ -9641,8 +9641,13 @@ def execute_stage(
     config: RCConfig,
     adapters: AdapterBundle,
     auto_approve_gates: bool = False,
+    skip_stages: frozenset[Stage] | None = None,
 ) -> StageResult:
-    """Execute one pipeline stage, validate outputs, and apply gate logic."""
+    """Execute one pipeline stage, validate outputs, and apply gate logic.
+
+    A missing input is an error, unless the stage that writes it is in
+    `skip_stages`: then this stage runs without it.
+    """
 
     stage_dir = run_dir / f"stage-{int(stage):02d}"
     stage_dir.mkdir(parents=True, exist_ok=True)
@@ -9652,6 +9657,11 @@ def execute_stage(
     if contract.input_files:
         for input_file in contract.input_files:
             found = _read_prior_artifact(run_dir, input_file)
+            if found is None and any(
+                input_file in CONTRACTS[s].output_files for s in (skip_stages or ())
+            ):
+                print(f"  ! {stage.name}: running without {input_file} (its stage was skipped)", flush=True)
+                continue
             if found is None:
                 result = StageResult(
                     stage=stage,

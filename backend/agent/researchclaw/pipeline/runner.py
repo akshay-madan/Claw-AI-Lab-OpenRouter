@@ -247,6 +247,7 @@ def execute_pipeline(
 
         print(f"{prefix} {stage.name} — running...")
         t0 = _time.monotonic()
+        os.environ["RC_COST_STAGE"] = str(stage_num)
 
         result = execute_stage(
             stage,
@@ -255,6 +256,7 @@ def execute_pipeline(
             config=config,
             adapters=adapters,
             auto_approve_gates=auto_approve_gates,
+            skip_stages=skip_stages,
         )
         elapsed = _time.monotonic() - t0
         if result.status == StageStatus.DONE:

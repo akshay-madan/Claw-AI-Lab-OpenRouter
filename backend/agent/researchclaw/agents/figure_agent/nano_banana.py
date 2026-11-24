@@ -435,6 +435,7 @@ class NanoBananaAgent(BaseAgent):
         # OpenRouter only returns images when output modalities are requested
         if "openrouter.ai" in self._base_url:
             payload["modalities"] = ["image", "text"]
+            payload["usage"] = {"include": True}
 
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -450,6 +451,9 @@ class NanoBananaAgent(BaseAgent):
         try:
             with urllib.request.urlopen(req, timeout=180) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
+
+            from researchclaw.llm import cost
+            cost.record(self._image_model, result.get("usage"))
 
             choices = result.get("choices", [])
             if not choices:

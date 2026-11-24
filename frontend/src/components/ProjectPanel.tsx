@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { ALL_LAYERS } from '../types';
-import type { ProjectInfo, Artifact, AgentLayer, PipelineOptions } from '../types';
+import type { ProjectInfo, Artifact, AgentLayer, CostSummary, PipelineOptions } from '../types';
 import { useLocale } from '../i18n';
 import {
   START_LAYER_INPUTS, layerStages, skipWarnings, stageRangeLabel, stagesBefore, stagesOfLayers,
@@ -31,6 +31,9 @@ interface Props {
   discussionMode: boolean;
   /** Layers switched off for new projects (layer header switch / config.yaml) */
   disabledLayers: AgentLayer[];
+  modelProfiles: string[];
+  activeProfile: string;
+  costs: CostSummary | null;
   onToggleDiscussion: () => void;
   onSelect: (projectId: string) => void;
   onResume: (projectId: string) => void;
@@ -48,7 +51,7 @@ interface Props {
   ) => void;
 }
 
-export default function ProjectPanel({ projects, connected, selectedProjectId, artifactsByProject, discussionMode, disabledLayers, onToggleDiscussion, onSelect, onResume, onPause, onRestart, onDelete, onQuickSubmit }: Props) {
+export default function ProjectPanel({ projects, connected, selectedProjectId, artifactsByProject, discussionMode, disabledLayers, modelProfiles, activeProfile, costs, onToggleDiscussion, onSelect, onResume, onPause, onRestart, onDelete, onQuickSubmit }: Props) {
   const [panelOpen, setPanelOpen] = useState(true);
   const [mode, setMode] = useState<SubmitMode>('lab');
   const [topicInput, setTopicInput] = useState('');
@@ -66,6 +69,7 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
 
   // ── Pipeline: stages to skip, starting layer, user-supplied inputs ──
   const [showPipeline, setShowPipeline] = useState(false);
+  const [modelProfile, setModelProfile] = useState('');  // '' = the active preset
   const [startLayer, setStartLayer] = useState<AgentLayer>('idea');
   const [untickedStages, setUntickedStages] = useState<Set<number>>(new Set());
   const [startInputs, setStartInputs] = useState<Record<string, string>>({});
@@ -181,6 +185,7 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
       referenceFiles.map(({ name, contentBase64 }) => ({ name, contentBase64 })),
       paths,
       {
+        modelProfile,
         skipStages: [...skipSet].sort((a, b) => a - b),
         startLayer,
         startInputs: Object.fromEntries(
@@ -513,6 +518,21 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
                   )}
                 </div>
               )}
+              {modelProfiles.length > 0 && (
+                <label className="pipeline-start-row" title={t('models.hint')}>
+                  <span className="path-label">{t('models.label')}</span>
+                  <select
+                    className="pipeline-start-select"
+                    value={modelProfile || activeProfile}
+                    onChange={(e) => setModelProfile(e.target.value)}
+                    disabled={!connected}
+                  >
+                    {modelProfiles.map((p) => (
+                      <option key={p} value={p}>{p}{p === activeProfile ? ` (${t('models.default')})` : ''}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <button
                 className={`project-go-btn ${mode === 'lab' ? 'lab-mode' : 'reproduce-mode'}`}
                 onClick={submit}
@@ -542,6 +562,7 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
                 const isSelected = selectedProjectId === proj.projectId;
                 const isExpanded = expandedId === proj.projectId;
                 const arts = artifactsByProject[proj.projectId] || [];
+                const cost = costs?.projects[proj.projectId];
 
                 return (
                   <div
@@ -554,6 +575,7 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
                         {proj.topic || proj.projectId}
                       </span>
                       <span className="project-summary-progress">{pct}%</span>
+                      {cost && <span className="project-summary-arts" title={t('cost.project_title')}>${cost.total.toFixed(2)}</span>}
                       {arts.length > 0 && <span className="project-summary-arts">📦{arts.length}</span>}
                       {proj.intervention && <span className="project-intervention-icon" title={t('project.intervention_needed')}>⚠</span>}
                       <span className={`project-expand-arrow${isExpanded ? ' open' : ''}`}>▸</span>
@@ -583,6 +605,21 @@ export default function ProjectPanel({ projects, connected, selectedProjectId, a
                             </>
                           )}
                         </div>
+
+                        {(proj.modelProfile || proj.mode) && (
+                          <div className="project-detail-stage" title={t('models.locked_hint')}>
+                            🔒 {[proj.modelProfile, proj.mode && t(`models.mode.${proj.mode}`)].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+
+                        {cost && (
+                          <div className="project-detail-stage" title={t('cost.project_title')}>
+                            💰 ${cost.total.toFixed(3)}
+                            {ALL_LAYERS.filter((l) => cost.layers[l]).map((l) => (
+                              <span key={l}> · L{ALL_LAYERS.indexOf(l) + 1} ${cost.layers[l].toFixed(3)}</span>
+                            ))}
+                          </div>
+                        )}
 
                         {proj.skippedStages && proj.skippedStages.length > 0 && (
                           <div className="project-detail-stage" title={t('pipeline.skipped')}>
