@@ -420,8 +420,14 @@ class CodegenRuntime:
         # Write experiment directory
         exp_dir = stage_dir / "experiment"
         exp_dir.mkdir(parents=True, exist_ok=True)
+        exp_root = exp_dir.resolve()
         for fname, code in files.items():
-            (exp_dir / fname).write_text(code, encoding="utf-8")
+            target = (exp_dir / fname).resolve()
+            if not target.is_relative_to(exp_root):
+                session.log(CodegenPhase.GENERATE, f"Ignored file outside experiment/: {fname}")
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)  # e.g. outputs/summary.json
+            target.write_text(code, encoding="utf-8")
         session.log(CodegenPhase.GENERATE, f"Wrote {len(files)} files to {exp_dir}")
 
         # ── Phase 6: FINALIZE ────────────────────────────────────────────

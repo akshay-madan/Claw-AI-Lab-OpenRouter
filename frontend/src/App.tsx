@@ -73,8 +73,22 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, logs: [...state.logs, action.payload] };
     case 'chat_message':
       return { ...state, chatMessages: [...state.chatMessages, action.payload] };
-    case 'set_connected':
-      return { ...state, connected: action.payload };
+    case 'set_connected': {
+      if (action.payload) return { ...state, connected: true };
+      // Agents are gone: nothing is running any more, so don't keep showing the last known status.
+      // The real state is sent again on reconnect.
+      return {
+        ...state,
+        connected: false,
+        projects: state.projects.map((p) => (
+          p.status === 'running' || p.status === 'queued' ? { ...p, status: 'interrupted' } : p
+        )),
+        agents: state.agents.map((a) => (
+          ['working', 'waiting_discussion', 'discussing'].includes(a.status)
+            ? { ...a, status: 'idle', currentTask: '' } : a
+        )),
+      };
+    }
     case 'set_res_connected':
       return { ...state, resConnected: action.payload };
     case 'queue_update': {

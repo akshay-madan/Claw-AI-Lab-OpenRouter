@@ -275,6 +275,7 @@ def _apply_model_profile(content: str, profile: dict) -> str:
     data.pop("model_profiles", None)
     data.pop("secrets_file", None)
     data.pop("agent_pool", None)
+    data.pop("spend_limit_usd", None)
     data.pop("disabled_layers", None)
     llm = data.setdefault("llm", {})
     for key in ("provider", "base_url", "primary_model", "coding_model", "image_model", "fallback_models"):
@@ -405,7 +406,7 @@ def _pause_project(state: "BridgeState", project_id: str) -> list[dict]:
     for agent in list(state.agents.values()):
         if agent.project_id == project_id:
             if agent.process is not None and agent.process.poll() is None:
-                agent.process.terminate()
+                _terminate_tree(agent.process)
                 try:
                     agent.process.wait(timeout=5)
                 except Exception:
@@ -870,6 +871,7 @@ class BridgeState:
     idea_factory_remaining: int = 0  # 0=disabled, -1=infinite, N=count
     idea_factory_produced: int = 0
     _fail_counts: dict[str, int] = field(default_factory=dict)  # project_id → consecutive fail count
+    spend_blocked: bool = False  # True while spend_limit_usd is reached or cannot be checked
     # Lab mode: track which sub-projects belong to the same batch
     lab_batches: dict[str, list[str]] = field(default_factory=dict)  # base_id → [sub_project_ids]
     # Layers switched off for NEW projects (their stages are added to the project's skip list)
@@ -1353,10 +1355,28 @@ def launch_agent_for_task(state: BridgeState, agent: LobsterAgent, task: Task) -
     return messages
 
 
+def _terminate_tree(proc: subprocess.Popen) -> None:
+    """Terminate a run and everything it started (e.g. a running experiment)."""
+    def _children(pid: int) -> list[int]:
+        out = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True).stdout
+        kids = [int(x) for x in out.split()]
+        return [d for k in kids for d in _children(k)] + kids
+    try:
+        pids = _children(proc.pid)
+    except Exception:
+        pids = []
+    proc.terminate()
+    for pid in pids:
+        try:
+            os.kill(pid, 15)
+        except OSError:
+            pass
+
+
 def stop_agent(agent: LobsterAgent) -> list[dict]:
     messages: list[dict] = []
     if agent.process and agent.process.poll() is None:
-        agent.process.terminate()
+        _terminate_tree(agent.process)
         try:
             agent.process.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -3053,6 +3073,8 @@ def _on_discussion_s8_done(state: BridgeState, agent: LobsterAgent) -> list[dict
 def schedule_idle_agents(state: BridgeState) -> list[dict]:
     """Assign pending tasks to idle agents (FIFO pull)."""
     messages: list[dict] = []
+    if state.spend_blocked:
+        return messages
 
     for agent in state.agents.values():
         if agent.status not in ("idle",) or agent.process is not None:
@@ -3466,6 +3488,84 @@ async def ws_handler(state: BridgeState, websocket: websockets.ServerConnection)
         print(f"[-] Client disconnected (total: {len(state.clients)})")
 
 
+# ── Spending limit ──────────────────────────────────────────────────────────
+
+def _spend_limit() -> float:
+    try:
+        return max(0.0, float(_read_root_config().get("spend_limit_usd") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _spend_used(state: BridgeState) -> float:
+    """USD spent on the OpenRouter key since the limit was first used (raises if unknown)."""
+    import urllib.request
+    llm = {**(_read_root_config().get("llm") or {}), **_load_model_profile()}
+    if llm.get("provider") != "openrouter":
+        raise RuntimeError("only OpenRouter spend can be checked")
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/key",
+        headers={"Authorization": f"Bearer {os.environ.get('RESEARCHCLAW_API_KEY', '')}"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        usage = float(json.load(resp)["data"]["usage"])
+    path = Path(state.runs_base_dir) / "spend.json"
+    saved = _read_json(path)
+    if not isinstance(saved, dict) or "baseline" not in saved:
+        saved = {"baseline": usage}
+        _write_json(path, saved)
+    return usage - float(saved["baseline"])
+
+
+def _stop_for_spend(state: BridgeState, reason: str) -> list[dict]:
+    """Pause every project that is running or queued (files are kept; Resume continues them)."""
+    pids = {a.project_id for a in state.agents.values() if a.project_id and a.process is not None}
+    pids |= {t.project_id for q in state.queues.values() for t in q.tasks if t.status in ("pending", "assigned")}
+    for g in list(state.discussion_groups.values()):
+        if g.discussion_process is not None and g.discussion_process.poll() is None:
+            _terminate_tree(g.discussion_process)
+            pids |= {state.agents[a].project_id for a in g.agent_ids if a in state.agents}
+    messages: list[dict] = []
+    for pid in sorted(p for p in pids if p):
+        messages.extend(_pause_project(state, pid))
+    for a in state.agents.values():  # e.g. idea-factory runs without a project
+        if a.process is not None and a.process.poll() is None:
+            messages.extend(stop_agent(a))
+    if pids or not state.spend_blocked:
+        messages.append(msg_log(_system_agent(), f"Agents stopped: {reason}", "error"))
+    return messages
+
+
+async def spend_loop(state: BridgeState, interval: float = 20.0):
+    """Enforce spend_limit_usd. Stops at 85% of it, because OpenRouter reports spend late."""
+    failures = 0
+    while True:
+        limit = _spend_limit()
+        if limit <= 0:
+            if state.spend_blocked:
+                state.spend_blocked = False
+                await broadcast(state, schedule_idle_agents(state))
+        else:
+            try:
+                used = await asyncio.to_thread(_spend_used, state)
+                failures = 0
+                reason = (f"spending limit reached (${used:.2f} of ${limit:.2f}). "
+                          "Raise spend_limit_usd in config.yaml to continue.") if used >= 0.85 * limit else ""
+                print(f"[spend] ${used:.4f} of ${limit:.2f}")
+            except Exception as exc:
+                failures += 1
+                reason = f"spend cannot be checked ({exc}) while spend_limit_usd is set" if failures >= 3 or state.spend_blocked else ""
+                print(f"[spend] check failed: {exc}")
+            if reason:
+                msgs = _stop_for_spend(state, reason)
+                state.spend_blocked = True
+                await broadcast(state, msgs)
+            elif failures == 0 and state.spend_blocked:
+                state.spend_blocked = False
+                await broadcast(state, schedule_idle_agents(state))
+        await asyncio.sleep(interval)
+
+
 async def poll_loop(state: BridgeState, interval: float):
     while True:
         await asyncio.sleep(interval)
@@ -3732,6 +3832,8 @@ async def main(args: argparse.Namespace):
         process_request=_make_process_request(state),
         max_size=64 * 1024 * 1024,
     ):
+        state.spend_blocked = _spend_limit() > 0  # nothing starts until the first check passes
+        _spend_task = asyncio.create_task(spend_loop(state))
         await poll_loop(state, args.interval)
 
 
