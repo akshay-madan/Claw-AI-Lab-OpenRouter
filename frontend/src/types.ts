@@ -336,6 +336,18 @@ export interface ProjectInfo {
   topic: string;
   configPath: string;
   intervention?: string;
+  /** Non-skipped stages finished (progress counts only stages that run). */
+  completedStages?: number;
+  /** Stages this project skips (unticked, switched-off layers, before start layer). */
+  skippedStages?: number[];
+  startLayer?: AgentLayer;
+}
+
+/** Per-project pipeline choices sent with quick_submit. */
+export interface PipelineOptions {
+  skipStages: number[];
+  startLayer: AgentLayer;
+  startInputs: Record<string, string>;
 }
 
 // ===================== WebSocket Protocol =====================
@@ -350,6 +362,7 @@ export type WSMessage =
   | { type: 'queue_update'; payload: QueueMap }
   | { type: 'chat_message'; payload: ChatMessage }
   | { type: 'project_list'; payload: ProjectInfo[] }
+  | { type: 'layer_settings'; payload: { disabledLayers: AgentLayer[] } }
   | { type: 'system'; payload: { message: string } };
 
 // ===================== App State =====================
@@ -366,4 +379,6 @@ export interface AppState {
   resConnected: boolean;
   connected: boolean;
   mockMode: boolean;
+  /** Layers switched off for new projects. */
+  disabledLayers: AgentLayer[];
 }

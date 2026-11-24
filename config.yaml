@@ -63,8 +63,17 @@ agent_pool:
   idea: 3          # L1 research & ideas (S1–S8)
   experiment: 2    # L2 experiment design (S9)
   coding: 3        # L3 code & resources (S10–S13)
-  execution: 4     # L4 execution & refinement (S14–S17), also limited by free GPUs
-  writing: 2       # L5 paper writing (S18–S22)
+  execution: 4     # L4 execution & refinement (S14–S18), also limited by free GPUs
+  writing: 2       # L5 paper writing (S19–S22)
+
+# ── Layers switched off ──────────────────────────────────────────────
+# Layers listed here start switched off: new projects skip all of that layer's
+# stages and pass straight to the next layer's queue. Projects submitted earlier
+# are not affected. Flip a layer live with the switch on its header in the UI
+# (not saved). Names: idea | experiment | coding | execution | writing, or L1–L5.
+# Later stages read files the skipped ones would have written; supply them when
+# submitting (Pipeline stages → Start at) or they get empty text.
+disabled_layers: []   # e.g. [idea, experiment] to start every project at L3
 
 # ── Pipeline ─────────────────────────────────────────────────────────
 project:

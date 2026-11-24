@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { LAYER_META, STAGE_META } from '../types';
 import type { LobsterAgent, LogEntry, AgentLayer } from '../types';
 import { useLocale } from '../i18n';
+import { layerStages, skipWarnings, stagesOfLayers, stageRangeLabel } from '../pipeline';
 
 interface Props {
   layer: AgentLayer;
@@ -12,6 +13,10 @@ interface Props {
   connected?: boolean;
   onAddAgent?: (layer: AgentLayer) => void;
   onRemoveAgent?: (agentId: string) => void;
+  /** Layer switched off for new projects */
+  disabled?: boolean;
+  disabledLayers?: AgentLayer[];
+  onToggleLayer?: (layer: AgentLayer, enabled: boolean) => void;
 }
 
 const STATUS_ICON: Record<string, string> = {
@@ -24,7 +29,7 @@ const STAGE_ST: Record<string, string> = {
 };
 const DISCUSSION_STAGE = 100;
 
-export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId, connected, onAddAgent, onRemoveAgent }: Props) {
+export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId, connected, onAddAgent, onRemoveAgent, disabled, disabledLayers, onToggleLayer }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { t, locale } = useLocale();
   const meta = LAYER_META[layer];
@@ -36,10 +41,18 @@ export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId
   // Only idle agents can be removed; keep at least one per layer
   const removable = [...agents].reverse().find((a) => a.status === 'idle');
   const canRemove = !!removable && agents.length > 1;
+  // Switched off: which still-running stages read files this layer would have written
+  const ownStages = new Set(layerStages(layer));
+  const offWarnings = disabled
+    ? skipWarnings(new Set(stagesOfLayers(disabledLayers || []))).filter((w) => ownStages.has(w.producer))
+    : [];
+  const offWarningText = offWarnings
+    .map((w) => t('skip.warn_line', { file: w.file, producer: `S${w.producer}`, consumers: stageRangeLabel(w.consumers) }))
+    .join('\n');
 
   return (
     <div
-      className="layer-panel"
+      className={`layer-panel${disabled ? ' layer-disabled' : ''}`}
       style={{ '--layer-color': meta.color, width: `${widthPercent}%`, maxWidth: '100%' } as React.CSSProperties}
     >
       <div className="layer-header" onClick={() => setExpanded(!expanded)}>
@@ -49,6 +62,24 @@ export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId
           <span className="layer-agent-count">
             {agents.length} 🦞 · {workingCount} {t('layer.active')}
           </span>
+          {disabled && <span className="layer-off-badge" title={t('layer.off_hint')}>⏭ {t('layer.off')}</span>}
+          {offWarnings.length > 0 && (
+            <span className="layer-off-warning" title={`${t('layer.off_warning')}\n${offWarningText}`}>⚠</span>
+          )}
+          {connected && onToggleLayer && (
+            <span className="layer-agent-controls" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!disabled}
+                className={`layer-switch${disabled ? '' : ' on'}`}
+                title={disabled ? t('layer.switch_on') : t('layer.switch_off')}
+                onClick={() => onToggleLayer(layer, !!disabled)}
+              >
+                <span className="layer-switch-knob" />
+              </button>
+            </span>
+          )}
           {connected && onAddAgent && onRemoveAgent && (
             <span className="layer-agent-controls" onClick={(e) => e.stopPropagation()}>
               <button
@@ -77,7 +108,7 @@ export default memo(function LayerPanel({ layer, agents, logs, selectedProjectId
             const anyDone = isDisc
               ? agents.some((a) => a.stageProgress[DISCUSSION_STAGE] === 'completed')
               : agents.some((a) => a.stageProgress[s] === 'completed');
-            const cls = anyRunning ? 'stage-running' : anyDone ? 'stage-done' : 'stage-idle';
+            const cls = disabled ? 'stage-skipped' : anyRunning ? 'stage-running' : anyDone ? 'stage-done' : 'stage-idle';
             const dn = sm.displayNumber;
             const sName = t(`stage.${s}`);
             const label = isDisc ? `💬 ${sName}` : `S${dn} ${sName}`;
