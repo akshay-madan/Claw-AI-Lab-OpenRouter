@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 from researchclaw.config import SshRemoteConfig
+from researchclaw.utils.safe_env import clean_env
 from researchclaw.experiment.sandbox import (
     SandboxResult,
     parse_metrics,
@@ -337,6 +338,7 @@ class SshRemoteSandbox:
                 text=True,
                 timeout=timeout_sec,
                 check=False,
+                env=clean_env(keep=("SSH_AUTH_SOCK",)),
             )
             return _SshResult(
                 returncode=cp.returncode,

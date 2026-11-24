@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from researchclaw.config import DockerSandboxConfig
+from researchclaw.utils.safe_env import clean_env
 from researchclaw.experiment.sandbox import (
     SandboxResult,
     parse_metrics,
@@ -289,6 +290,7 @@ class DockerSandbox:
                 text=True,
                 timeout=timeout_sec,
                 check=False,
+                env=clean_env(),
             )
             stdout = completed.stdout
             stderr = completed.stderr
@@ -425,10 +427,8 @@ class DockerSandbox:
                 cmd.extend(["-v", f"{hf_cache_host}:{_hf_container}:ro"])
                 cmd.extend(["-e", f"HF_HOME={_hf_container}"])
 
-        # Pass HF token if available (for gated model downloads)
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        if hf_token:
-            cmd.extend(["-e", f"HF_TOKEN={hf_token}"])
+        # No HF_TOKEN here: the container runs model-written code, which gets no keys.
+        # Put gated models in the HuggingFace cache beforehand.
 
         # GPU / NPU passthrough
         if cfg.gpu_enabled:

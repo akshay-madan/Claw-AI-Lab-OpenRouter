@@ -24,6 +24,7 @@ from typing import Any
 
 from researchclaw.agents.base import BaseAgent, AgentStepResult
 from researchclaw.utils.sanitize import sanitize_figure_id
+from researchclaw.utils.safe_env import clean_env
 
 logger = logging.getLogger(__name__)
 
@@ -269,6 +270,7 @@ class RendererAgent(BaseAgent):
                 # BUG-20: Use output_dir as CWD so relative paths
                 # like fig.savefig("comparison.png") resolve correctly
                 cwd=str(output_dir.resolve()),
+                env=clean_env(),
             )
         except subprocess.TimeoutExpired:
             return {"error": f"Script timed out after {self._timeout}s"}
@@ -329,6 +331,7 @@ class RendererAgent(BaseAgent):
                 text=True,
                 timeout=self._timeout,
                 check=False,
+                env=clean_env(),
             )
         except subprocess.TimeoutExpired:
             # Kill the container on timeout

@@ -16,6 +16,8 @@ import os
 import re
 import subprocess
 from pathlib import Path
+
+from researchclaw.utils.safe_env import clean_env
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -91,7 +93,7 @@ class ToolExecutor:
         if any(d in cmd_lower for d in _dangerous):
             raise PermissionError(f"Dangerous command blocked: {command[:80]}")
 
-        env = os.environ.copy()
+        env = clean_env()  # model-written commands never see API keys
         env["WORKSPACE"] = str(self.workspace)
 
         # Use python_path from config (experiment.sandbox.python_path) to

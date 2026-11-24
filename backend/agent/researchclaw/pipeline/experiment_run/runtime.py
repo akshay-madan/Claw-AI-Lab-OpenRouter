@@ -23,6 +23,7 @@ from researchclaw.pipeline.experiment_run.system_prompt import (
     build_user_message,
 )
 from researchclaw.pipeline.stages import Stage, StageStatus
+from researchclaw.utils.safe_env import clean_env
 
 logger = logging.getLogger(__name__)
 
@@ -266,14 +267,14 @@ class ExperimentRunRuntime:
             try:
                 r = subprocess.run(
                     [py, "-c", f"import {pkg}"],
-                    capture_output=True, timeout=10,
+                    capture_output=True, timeout=10, env=clean_env(),
                 )
                 if r.returncode != 0:
                     pip_name = {"sklearn": "scikit-learn", "PIL": "Pillow", "cv2": "opencv-python"}.get(pkg, pkg)
                     session.log("DEPS", f"Installing {pip_name}")
                     subprocess.run(
                         [py, "-m", "pip", "install", pip_name, "--quiet"],
-                        capture_output=True, timeout=120,
+                        capture_output=True, timeout=120, env=clean_env(),
                     )
             except Exception:
                 pass

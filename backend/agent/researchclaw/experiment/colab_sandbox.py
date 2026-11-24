@@ -66,10 +66,14 @@ while True:
         task_dir.rename(run_dir)
         print(f"[{task_id}] Running...")
 
+        # Model-written code gets no API keys
+        safe_env = {k: v for k, v in os.environ.items() if not any(
+            w in k.upper().split("_") for w in ("KEY", "APIKEY", "TOKEN", "SECRET", "PASSWORD", "AUTH"))}
+
         # Run setup.sh if present
         setup_sh = run_dir / "setup.sh"
         if setup_sh.exists():
-            subprocess.run(["bash", str(setup_sh)], cwd=str(run_dir),
+            subprocess.run(["bash", str(setup_sh)], cwd=str(run_dir), env=safe_env,
                            capture_output=True, timeout=300)
 
         # Find entry point
@@ -85,7 +89,7 @@ while True:
             try:
                 cp = subprocess.run(
                     ["python3", "-u", str(entry)],
-                    cwd=str(run_dir),
+                    cwd=str(run_dir), env=safe_env,
                     capture_output=True, text=True,
                     timeout=1800,  # 30 min max per experiment
                 )

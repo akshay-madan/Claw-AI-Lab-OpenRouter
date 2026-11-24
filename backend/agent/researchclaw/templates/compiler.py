@@ -19,6 +19,8 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from researchclaw.utils.safe_env import clean_env
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +84,7 @@ def compile_latex(
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                env=clean_env(),
             )
         except subprocess.TimeoutExpired:
             result.errors.append(f"pdflatex timed out after {timeout}s")
@@ -108,6 +111,7 @@ def compile_latex(
                     capture_output=True,
                     text=True,
                     timeout=timeout,
+                    env=clean_env(),
                 )
             logger.info("IMP-18: LaTeX compiled successfully on attempt %d", attempt)
             break
@@ -353,6 +357,7 @@ def _run_bibtex(work_dir: Path, stem: str, timeout: int = 60) -> bool:
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=clean_env(),
         )
         return proc.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):

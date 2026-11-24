@@ -31,6 +31,8 @@ from researchclaw.pipeline.opencode_bridge import (
     score_complexity,
 )
 
+from researchclaw.utils.safe_env import clean_env
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -616,7 +618,7 @@ class OpenHandsBridge:
     ) -> tuple[bool, str, float]:
         """Run a single aider invocation in the workspace."""
         workspace = workspace.resolve()
-        env = os.environ.copy()
+        env = clean_env()
 
         for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
             env.pop(var, None)
@@ -682,6 +684,7 @@ class OpenHandsBridge:
                 capture_output=True,
                 text=True,
                 timeout=30,
+                env=clean_env(),
             )
             if result.returncode != 0:
                 return (result.stderr or result.stdout)[-1000:]

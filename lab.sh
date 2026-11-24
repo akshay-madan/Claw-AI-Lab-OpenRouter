@@ -40,7 +40,10 @@ if [ -f "$SECRETS_FILE" ]; then
             case "$_names" in
                 *[!A-Za-z0-9_]*) _names="OPENROUTER_API_KEY" ;;   # several names: use the usual one
             esac
-            [ -n "$_names" ] && RESEARCHCLAW_API_KEY="${!_names:-}"
+            if [ -n "$_names" ]; then
+                RESEARCHCLAW_API_KEY="${!_names:-}"
+                unset "$_names"   # keep the key under one name only
+            fi
             export RESEARCHCLAW_API_KEY
         fi
     else
@@ -89,6 +92,9 @@ export RESOURCE_MONITOR_PORT AGENT_BRIDGE_PORT
 
 # API key comes from the secrets file above (or llm.api_key in the config yaml).
 export RESEARCHCLAW_API_KEY="${RESEARCHCLAW_API_KEY:-}"
+
+# The page server and resource monitor make no model calls: don't give them keys
+NO_KEYS="-u RESEARCHCLAW_API_KEY -u RESEARCHCLAW_IMAGE_API_KEY -u EXA_API_KEY -u TAVILY_API_KEY -u OPENROUTER_API_KEY"
 
 # Model preset: 2nd arg > $MODEL_PROFILE > `model_profile:` in config.yaml
 PROFILE_FILE_ACTIVE="$(sed -n 's/^model_profile:[[:space:]]*"\{0,1\}\([A-Za-z0-9_-]*\).*/\1/p' "$BASE/config.yaml" 2>/dev/null)"
@@ -150,7 +156,7 @@ do_start() {
     if is_port_listening "$RESOURCE_MONITOR_PORT"; then
         echo -e "  ${Y}⏭ resource_monitor already running (port ${RESOURCE_MONITOR_PORT})${N}"
     else
-        nohup $PY -u "$BASE/backend/services/resource_monitor.py" --port "$RESOURCE_MONITOR_PORT" \
+        nohup env $NO_KEYS $PY -u "$BASE/backend/services/resource_monitor.py" --port "$RESOURCE_MONITOR_PORT" \
             > "$LOG/resource_monitor.log" 2>&1 &
         echo $! > "$PIDF/resource_monitor.pid"
         sleep 1
@@ -192,7 +198,7 @@ do_start() {
             do_stop frontend >/dev/null
         fi
         cd "$FE"
-        nohup env RESOURCE_MONITOR_PORT="$RESOURCE_MONITOR_PORT" AGENT_BRIDGE_PORT="$AGENT_BRIDGE_PORT" \
+        nohup env $NO_KEYS RESOURCE_MONITOR_PORT="$RESOURCE_MONITOR_PORT" AGENT_BRIDGE_PORT="$AGENT_BRIDGE_PORT" \
             npx vite --host 0.0.0.0 --port "$FRONTEND_PORT" \
             > "$LOG/frontend.log" 2>&1 &
         echo $! > "$PIDF/frontend.pid"

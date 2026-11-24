@@ -8,6 +8,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from researchclaw.utils.safe_env import clean_env
+
 logger = logging.getLogger(__name__)
 
 
@@ -117,6 +119,7 @@ class ExperimentGitManager:
                 capture_output=True,
                 text=True,
                 check=False,
+                env=clean_env(),
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Git operation failed (%s): %s", " ".join(args), exc)

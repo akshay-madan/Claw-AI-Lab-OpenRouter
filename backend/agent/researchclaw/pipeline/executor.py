@@ -3873,9 +3873,11 @@ def _execute_codebase_search(
                 local_path = codebase_dir / f"repo_{i}"
                 try:
                     import subprocess
+                    from researchclaw.utils.safe_env import clean_env
                     result = subprocess.run(
                         ["git", "clone", "--depth", "1", url, str(local_path)],
                         capture_output=True, text=True, timeout=60,
+                        env=clean_env({"GIT_TERMINAL_PROMPT": "0"}),
                     )
                     if result.returncode == 0:
                         cand["local_path"] = str(local_path)

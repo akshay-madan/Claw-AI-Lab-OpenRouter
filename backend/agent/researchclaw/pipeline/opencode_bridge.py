@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from researchclaw.utils.safe_env import clean_env
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -572,7 +574,7 @@ class OpenCodeBridge:
     ) -> tuple[bool, str, float]:
         """Run ``opencode run`` in the workspace. Returns (success, log, elapsed)."""
         workspace = workspace.resolve()
-        env = os.environ.copy()
+        env = clean_env(keep=(self._api_key_env,))
         # Pass API key via environment if configured
         if self._api_key_env:
             api_key = os.environ.get(self._api_key_env, "")
