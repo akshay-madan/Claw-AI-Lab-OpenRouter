@@ -142,7 +142,10 @@ class SanityCheckRuntime:
         fixed_count = self._copy_fixes_back(workspace, experiment_dir, session)
 
         # Determine success: check if smoke test passed by examining final text
-        success = self._check_success(turn_result, workspace, max_iterations=min(max_iters, 30))
+        success = self._check_success(
+            turn_result, workspace, max_iterations=min(max_iters, 30),
+            python_path=python_path, session=session,
+        )
         session.log(
             "RESULT",
             f"Sanity check {'PASSED' if success else 'FAILED'}: "
@@ -318,8 +321,14 @@ class SanityCheckRuntime:
         turn_result: Any,
         workspace: Path,
         max_iterations: int = 30,
+        python_path: str = "",
+        session: Any = None,
     ) -> bool:
         """Determine if the smoke test passed.
+
+        First, by running it: `SMOKE_TEST=1 python main.py` in the workspace, exit
+        code 0 = passed. The agent's own wording is used only when there is no
+        main.py to run (it misjudged "has passed successfully" as a failure).
 
         Success criteria (in order):
         1. LLM final text explicitly declares the test passed → True
@@ -328,6 +337,25 @@ class SanityCheckRuntime:
         4. LLM final text contains failure language → False
         5. LLM stopped voluntarily (no more tool calls) with no errors → True
         """
+        main_py = workspace / "main.py"
+        if main_py.is_file():
+            import subprocess
+            import sys
+            from researchclaw.utils.safe_env import clean_env
+            try:
+                r = subprocess.run(
+                    [python_path or sys.executable, "main.py"], cwd=str(workspace),
+                    env=clean_env({"SMOKE_TEST": "1", "PYTHONUNBUFFERED": "1"}),
+                    capture_output=True, text=True, timeout=300,
+                )
+                ok = r.returncode == 0
+                detail = "" if ok else (r.stderr or r.stdout)[-300:]
+            except subprocess.TimeoutExpired:
+                ok, detail = False, "timed out after 300s"
+            if session is not None:
+                session.log("RESULT", f"Smoke test re-run by the stage: {'exit 0' if ok else 'FAILED ' + detail}")
+            return ok
+
         final = turn_result.final_text.lower()
 
         _PASS_PHRASES = (

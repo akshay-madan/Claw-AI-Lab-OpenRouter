@@ -770,8 +770,10 @@ def _check_experiment_quality(
     Returns (ok, message). ok=False means experiment results have critical
     quality issues and the forced-PROCEED paper will likely be poor.
     """
-    # Find most recent experiment summary
-    summary_path = run_dir / "stage-14" / "experiment_summary.json"
+    # Find most recent experiment summary (S16 writes it; older runs had it in stage-14)
+    summary_path = run_dir / "stage-16" / "experiment_summary.json"
+    if not summary_path.exists():
+        summary_path = run_dir / "stage-14" / "experiment_summary.json"
     if not summary_path.exists():
         for v in range(pivot_count, 0, -1):
             alt = run_dir / f"stage-14_v{v}" / "experiment_summary.json"

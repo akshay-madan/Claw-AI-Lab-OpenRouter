@@ -68,3 +68,4 @@ homepage/
 .env.*
 secrets.env
 config.local.yaml
+backend/agent/runs/
