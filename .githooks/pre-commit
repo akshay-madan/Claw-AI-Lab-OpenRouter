@@ -1,0 +1,9 @@
+#!/bin/sh
+# Block commits that add secrets (API keys, tokens). Needs gitleaks: brew install gitleaks
+# Enable once per clone: git config core.hooksPath .githooks
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks is not installed, so staged changes were NOT checked for secrets." >&2
+    echo "           Install it (brew install gitleaks) or commit with --no-verify to skip." >&2
+    exit 1
+fi
+exec gitleaks git --pre-commit --staged --redact --no-banner -v
