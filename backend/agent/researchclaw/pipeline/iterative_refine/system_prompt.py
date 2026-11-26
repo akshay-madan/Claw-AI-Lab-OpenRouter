@@ -60,6 +60,8 @@ modify the code, and re-run the experiment to improve the primary metric.
 """
 
 
+_MAX_RESULTS_CHARS = 8000  # baseline results shown in the prompt
+
 def build_user_message(
     *,
     experiment_dir: str,
@@ -73,7 +75,13 @@ def build_user_message(
     files_list = "\n".join(f"  - `{f}`" for f in experiment_files) if experiment_files else "  - main.py"
     baseline_section = ""
     if baseline_results:
-        baseline_section = f"\n\nBaseline results from initial run:\n```json\n{baseline_results}\n```\n"
+        # The whole file is in the workspace; resending a large one with every turn cost ~$0.90 in one test
+        shown = baseline_results
+        if len(shown) > _MAX_RESULTS_CHARS:
+            shown = (shown[:_MAX_RESULTS_CHARS]
+                     + f"\n... [{len(baseline_results) - _MAX_RESULTS_CHARS:,} more characters: read results.json"
+                     " in the workspace with read_file and offset/limit]")
+        baseline_section = f"\n\nBaseline results from initial run:\n```json\n{shown}\n```\n"
     plan_section = ""
     if exp_plan_summary:
         plan_section = f"\n\nExperiment plan summary:\n{exp_plan_summary}\n"
