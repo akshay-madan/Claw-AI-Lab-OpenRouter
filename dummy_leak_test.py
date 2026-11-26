@@ -1,1 +1,0 @@
-OPENROUTER_API_KEY = "sk-or-v1-7f3a9c7f3a9c7f3a9c7f3a9c7f3a9c7f3a9c7f3a9c7f3a9c7f3a9c7f3a9c7f3a9c"
